@@ -1,28 +1,34 @@
-const { getStore } = require("@netlify/blobs");
+const GITHUB_API = "https://api.github.com";
+const OWNER = "w3bninja";
+const REPO = "Bible";
+const BRANCH = "master";
+const FILE_PATH = "data/tags.json";
 
-const DEFAULT_TAGS = { tags: [], verseTags: {} };
+function ghHeaders() {
+  return {
+    Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+    "User-Agent": "bible-study-tags-function",
+  };
+}
 
-function openStore() {
-  // Automatic context injection is unreliable on some sites (a known Netlify
-  // platform issue), so fall back to explicit siteID/token when provided.
-  const siteID = process.env.NETLIFY_SITE_ID;
-  const token = process.env.NETLIFY_AUTH_TOKEN;
-  if (siteID && token) {
-    return getStore("bible-tags", { siteID, token });
-  }
-  return getStore("bible-tags");
+async function getFile() {
+  const res = await fetch(
+    `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}?ref=${BRANCH}`,
+    { headers: ghHeaders() }
+  );
+  if (!res.ok) throw new Error(`GitHub read failed: ${res.status} ${await res.text()}`);
+  return res.json();
 }
 
 exports.handler = async (event) => {
-  const store = openStore();
-
   if (event.httpMethod === "GET") {
-    const data = await store.get("tags", { type: "json" });
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data || DEFAULT_TAGS),
-    };
+    try {
+      const file = await getFile();
+      const content = Buffer.from(file.content, "base64").toString("utf-8");
+      return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: content };
+    } catch (err) {
+      return { statusCode: 502, body: String(err.message || err) };
+    }
   }
 
   if (event.httpMethod === "POST") {
@@ -32,12 +38,32 @@ exports.handler = async (event) => {
     } catch {
       return { statusCode: 400, body: "Invalid JSON" };
     }
-    await store.setJSON("tags", parsed);
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ok: true }),
-    };
+
+    try {
+      const current = await getFile();
+      const putRes = await fetch(
+        `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}`,
+        {
+          method: "PUT",
+          headers: { ...ghHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "Update tags.json via Bible Study app",
+            content: Buffer.from(JSON.stringify(parsed)).toString("base64"),
+            sha: current.sha,
+            branch: BRANCH,
+          }),
+        }
+      );
+      if (!putRes.ok) throw new Error(`GitHub write failed: ${putRes.status} ${await putRes.text()}`);
+
+      return {
+        statusCode: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ok: true }),
+      };
+    } catch (err) {
+      return { statusCode: 502, body: String(err.message || err) };
+    }
   }
 
   return { statusCode: 405, body: "Method not allowed" };
