@@ -1,16 +1,21 @@
 // State
-let bible = null;          // { books: [{ id, name, testament, order, chapters: [[verseText,...],...] }] }
+let bible = null;
 let booksById = new Map();
-let tagsData = { tags: [], verseTags: {} }; // verseTags[verseKey] = { tagIds: [...], note: "" }
+let tagsData = { tags: [], verseTags: {} }; // tags: [{id,name,hue}], verseTags[key] = { tagIds:[], note:'' }
 
 let currentBookId = null;
 let currentChapter = 1;
-let currentView = "read"; // 'read' | 'search' | 'tag'
-let activeTagId = null;
-let selection = new Set(); // verseKeys
-let lastClickedVerseKey = null;
+let currentView = "read"; // 'read' | 'verse' | 'tags' | 'search'
+let currentVerseKey = null; // for verse detail view
+let activeTagFilter = null; // null = "All"
+let pickerTestament = "OT";
+let pickerBookId = null; // set when drilled into chapter grid
+let tagAssignVerseKey = null;
 
 let saveTimer = null;
+let notesSaveTimer = null;
+
+const HUE_PRESETS = [10, 40, 70, 145, 190, 250, 290, 330];
 
 const el = (id) => document.getElementById(id);
 
@@ -29,6 +34,16 @@ function parseVerseKey(key) {
 function refLabel(bookId, chapter, verse) {
   const book = booksById.get(bookId);
   return `${book ? book.name : bookId} ${chapter}:${verse}`;
+}
+
+function chipColors(hue) {
+  return { bg: `oklch(0.93 0.035 ${hue})`, text: `oklch(0.4 0.09 ${hue})` };
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
 }
 
 async function fetchJSON(url) {
@@ -50,120 +65,82 @@ async function init() {
 
     booksById = new Map(bible.books.map((b) => [b.id, b]));
 
-    renderBookSidebar();
-    renderTagList();
-
     const last = JSON.parse(localStorage.getItem("bible-study:lastLocation") || "null");
     if (last && booksById.has(last.bookId)) {
       selectBook(last.bookId, last.chapter || 1);
     } else {
       selectBook("genesis", 1);
     }
-
-    setStatus("Ready");
   } catch (err) {
     console.error(err);
-    setStatus("Failed to load data — is the server running?", "error");
+    el("readView").innerHTML = '<div class="empty-msg">Failed to load data — is the server running?</div>';
   }
 }
 
-function setStatus(text, kind) {
-  const s = el("status");
-  s.textContent = text;
-  s.className = "status" + (kind ? ` ${kind}` : "");
+// ---------- View switching ----------
+
+function showView(view) {
+  currentView = view;
+  el("readView").classList.toggle("hidden", view !== "read");
+  el("verseView").classList.toggle("hidden", view !== "verse");
+  el("tagsView").classList.toggle("hidden", view !== "tags");
+  el("searchView").classList.toggle("hidden", view !== "search");
+  el("backBtn").classList.toggle("hidden", view !== "verse");
+  el("searchBar").classList.add("hidden");
+
+  const breadcrumbs = { read: "Reading", verse: "Verse & Notes", tags: "Your tagged verses", search: "Search" };
+  el("breadcrumb").textContent = breadcrumbs[view] || "";
+
+  document.querySelectorAll(".nav-item").forEach((item) => {
+    item.classList.toggle("active", item.dataset.view === view || (view === "verse" && item.dataset.view === "read") || (view === "search" && item.dataset.view === "read"));
+  });
 }
 
-// ---------- Sidebar / navigation ----------
+document.querySelectorAll(".nav-item").forEach((item) => {
+  item.addEventListener("click", () => {
+    if (item.dataset.view === "read") {
+      showView("read");
+    } else if (item.dataset.view === "tags") {
+      renderTagsView();
+      showView("tags");
+    }
+  });
+});
 
-function renderBookSidebar() {
-  const ot = el("otBooks");
-  const nt = el("ntBooks");
-  ot.innerHTML = "";
-  nt.innerHTML = "";
+el("backBtn").addEventListener("click", () => showView("read"));
 
-  for (const book of bible.books) {
-    const btn = document.createElement("button");
-    btn.className = "book-item";
-    btn.dataset.bookId = book.id;
-    btn.textContent = book.name;
-    btn.addEventListener("click", () => selectBook(book.id, 1));
-    (book.testament === "OT" ? ot : nt).appendChild(btn);
-  }
-}
+// ---------- Read view ----------
 
 function selectBook(bookId, chapter) {
   currentBookId = bookId;
   currentChapter = chapter || 1;
-  selection.clear();
-  updateSelectionBar();
-
-  document.querySelectorAll(".book-item").forEach((b) => {
-    b.classList.toggle("active", b.dataset.bookId === bookId);
-  });
-
-  renderChapterBar();
-  renderVerses();
+  renderReadView();
   showView("read");
-
-  localStorage.setItem(
-    "bible-study:lastLocation",
-    JSON.stringify({ bookId: currentBookId, chapter: currentChapter })
-  );
+  localStorage.setItem("bible-study:lastLocation", JSON.stringify({ bookId: currentBookId, chapter: currentChapter }));
 }
 
-function renderChapterBar() {
+function renderReadView() {
   const book = booksById.get(currentBookId);
-  const bar = el("chapterBar");
-  bar.innerHTML = "";
-  bar.classList.remove("hidden");
-
-  book.chapters.forEach((_, idx) => {
-    const chapNum = idx + 1;
-    const chip = document.createElement("button");
-    chip.className = "chapter-chip" + (chapNum === currentChapter ? " active" : "");
-    chip.textContent = chapNum;
-    chip.addEventListener("click", () => {
-      currentChapter = chapNum;
-      selection.clear();
-      updateSelectionBar();
-      renderChapterBar();
-      renderVerses();
-      localStorage.setItem(
-        "bible-study:lastLocation",
-        JSON.stringify({ bookId: currentBookId, chapter: currentChapter })
-      );
-    });
-    bar.appendChild(chip);
-  });
+  el("chapterHeading").textContent = `${book.name} ${currentChapter}`;
+  renderVerses();
 }
 
-function renderVerses(scrollToVerse) {
+function renderVerses() {
   const book = booksById.get(currentBookId);
   const verseTextArr = book.chapters[currentChapter - 1];
-
-  el("chapterHeading").textContent = `${book.name} ${currentChapter}`;
   const container = el("verses");
   container.innerHTML = "";
 
   verseTextArr.forEach((text, idx) => {
     const verseNum = idx + 1;
     const key = verseKey(book.id, currentChapter, verseNum);
-    const row = buildVerseRow(key, verseNum, text);
-    container.appendChild(row);
+    container.appendChild(buildVerseRow(key, verseNum, text));
   });
-
-  if (scrollToVerse) {
-    const target = container.querySelector(`[data-verse="${scrollToVerse}"]`);
-    if (target) target.scrollIntoView({ block: "center" });
-  }
 }
 
 function buildVerseRow(key, verseNum, text) {
   const row = document.createElement("div");
-  row.className = "verse";
-  row.dataset.key = key;
-  row.dataset.verse = verseNum;
-  if (selection.has(key)) row.classList.add("selected");
+  row.className = "verse-row";
 
   const num = document.createElement("div");
   num.className = "verse-num";
@@ -175,305 +152,352 @@ function buildVerseRow(key, verseNum, text) {
   const textEl = document.createElement("div");
   textEl.className = "verse-text";
   textEl.textContent = text;
+  textEl.addEventListener("click", () => openVerseDetail(key));
   body.appendChild(textEl);
+
+  const footer = document.createElement("div");
+  footer.className = "verse-footer";
+
+  const left = document.createElement("div");
+  left.className = "verse-footer-left";
 
   const entry = tagsData.verseTags[key];
   if (entry && entry.tagIds && entry.tagIds.length) {
-    const chips = document.createElement("div");
-    chips.className = "verse-chips";
     entry.tagIds.forEach((tagId) => {
       const tag = tagsData.tags.find((t) => t.id === tagId);
       if (!tag) return;
-      chips.appendChild(buildTagChip(tag, key));
+      const { bg, text: fg } = chipColors(tag.hue);
+      const chip = document.createElement("span");
+      chip.className = "tag-chip";
+      chip.style.background = bg;
+      chip.style.color = fg;
+      chip.textContent = tag.name;
+      left.appendChild(chip);
     });
-    body.appendChild(chips);
   }
-  if (entry && entry.note) {
-    const note = document.createElement("div");
-    note.className = "verse-note";
-    note.textContent = entry.note;
-    body.appendChild(note);
-  }
+
+  const addBtn = document.createElement("button");
+  addBtn.className = "tag-add-btn";
+  addBtn.textContent = "+ tag";
+  addBtn.addEventListener("click", () => openTagAssign(key));
+  left.appendChild(addBtn);
+
+  const notesBtn = document.createElement("button");
+  notesBtn.className = "notes-link";
+  notesBtn.textContent = "notes ›";
+  notesBtn.addEventListener("click", () => openVerseDetail(key));
+
+  footer.appendChild(left);
+  footer.appendChild(notesBtn);
+  body.appendChild(footer);
 
   row.appendChild(num);
   row.appendChild(body);
-
-  row.addEventListener("click", (e) => handleVerseClick(e, key));
   return row;
 }
 
-function buildTagChip(tag, verseKeyStr) {
-  const chip = document.createElement("button");
-  chip.className = "tag-chip";
-  chip.style.background = tag.color;
-  chip.title = "Click to remove from this verse";
-  chip.innerHTML = `<span>${escapeHtml(tag.name)}</span><span class="chip-remove">×</span>`;
-  chip.addEventListener("click", (e) => {
-    e.stopPropagation();
-    removeTagFromVerse(verseKeyStr, tag.id);
-  });
-  return chip;
-}
+function navigateChapter(delta) {
+  const book = booksById.get(currentBookId);
+  let newChapter = currentChapter + delta;
 
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-// ---------- Selection ----------
-
-function handleVerseClick(e, key) {
-  if (e.shiftKey && lastClickedVerseKey) {
-    selectRange(lastClickedVerseKey, key);
-  } else if (e.ctrlKey || e.metaKey) {
-    toggleSelection(key);
-  } else {
-    selection.clear();
-    selection.add(key);
-  }
-  lastClickedVerseKey = key;
-  applySelectionClasses();
-  updateSelectionBar();
-}
-
-function toggleSelection(key) {
-  if (selection.has(key)) selection.delete(key);
-  else selection.add(key);
-}
-
-function selectRange(fromKey, toKey) {
-  const a = parseVerseKey(fromKey);
-  const b = parseVerseKey(toKey);
-  if (a.bookId !== b.bookId || a.chapter !== b.chapter) {
-    selection.clear();
-    selection.add(toKey);
+  if (newChapter < 1) {
+    const prevBook = bible.books.find((b) => b.order === book.order - 1);
+    if (!prevBook) return;
+    selectBook(prevBook.id, prevBook.chapters.length);
     return;
   }
-  const lo = Math.min(a.verse, b.verse);
-  const hi = Math.max(a.verse, b.verse);
-  selection.clear();
-  for (let v = lo; v <= hi; v++) selection.add(verseKey(a.bookId, a.chapter, v));
+  if (newChapter > book.chapters.length) {
+    const nextBook = bible.books.find((b) => b.order === book.order + 1);
+    if (!nextBook) return;
+    selectBook(nextBook.id, 1);
+    return;
+  }
+  selectBook(currentBookId, newChapter);
 }
 
-function applySelectionClasses() {
-  document.querySelectorAll(".verse").forEach((row) => {
-    row.classList.toggle("selected", selection.has(row.dataset.key));
+el("prevChapterBtn").addEventListener("click", () => navigateChapter(-1));
+el("nextChapterBtn").addEventListener("click", () => navigateChapter(1));
+
+// ---------- Book/chapter picker ----------
+
+el("chapterPickerBtn").addEventListener("click", openPicker);
+
+function openPicker() {
+  pickerTestament = booksById.get(currentBookId).testament;
+  pickerBookId = null;
+  renderPickerTabs();
+  renderPickerBookList();
+  el("pickerBookList").classList.remove("hidden");
+  el("pickerChapterGrid").classList.add("hidden");
+  el("pickerOverlay").classList.remove("hidden");
+}
+
+function renderPickerTabs() {
+  document.querySelectorAll(".picker-tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.testament === pickerTestament);
   });
 }
 
-function updateSelectionBar() {
-  const bar = el("selectionBar");
-  if (selection.size === 0) {
-    bar.classList.add("hidden");
-    return;
-  }
-  bar.classList.remove("hidden");
-  el("selectionCount").textContent = `${selection.size} verse${selection.size > 1 ? "s" : ""} selected`;
-}
-
-el("clearSelectionBtn").addEventListener("click", () => {
-  selection.clear();
-  applySelectionClasses();
-  updateSelectionBar();
+document.querySelectorAll(".picker-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    pickerTestament = tab.dataset.testament;
+    renderPickerTabs();
+    renderPickerBookList();
+  });
 });
 
-// ---------- Tag picker (assign tags to selection) ----------
-
-el("tagSelectionBtn").addEventListener("click", openTagPicker);
-
-function openTagPicker() {
-  if (selection.size === 0) return;
-  const list = el("tagPickerList");
+function renderPickerBookList() {
+  const list = el("pickerBookList");
   list.innerHTML = "";
-
-  if (tagsData.tags.length === 0) {
-    list.innerHTML = '<div class="tag-empty">No tags yet — create one from the panel on the right.</div>';
-  }
-
-  const keys = [...selection];
-  tagsData.tags.forEach((tag) => {
-    const anySelected = keys.some((k) => (tagsData.verseTags[k]?.tagIds || []).includes(tag.id));
-    const row = document.createElement("label");
-    row.className = "tag-picker-row";
-    row.innerHTML = `
-      <input type="checkbox" data-tag-id="${tag.id}" ${anySelected ? "checked" : ""} />
-      <span class="tag-swatch" style="background:${tag.color}"></span>
-      <span>${escapeHtml(tag.name)}</span>
-    `;
-    list.appendChild(row);
-  });
-
-  // Prefill note only if exactly one verse is selected and it has a note.
-  if (keys.length === 1) {
-    el("verseNote").value = tagsData.verseTags[keys[0]]?.note || "";
-  } else {
-    el("verseNote").value = "";
-  }
-
-  el("tagPickerOverlay").classList.remove("hidden");
-}
-
-el("tagPickerCancel").addEventListener("click", () => el("tagPickerOverlay").classList.add("hidden"));
-
-el("tagPickerApply").addEventListener("click", () => {
-  const checkboxes = el("tagPickerList").querySelectorAll("input[type=checkbox]");
-  const note = el("verseNote").value.trim();
-
-  selection.forEach((key) => {
-    if (!tagsData.verseTags[key]) tagsData.verseTags[key] = { tagIds: [], note: "" };
-    const entry = tagsData.verseTags[key];
-
-    checkboxes.forEach((cb) => {
-      const tagId = cb.dataset.tagId;
-      const has = entry.tagIds.includes(tagId);
-      if (cb.checked && !has) entry.tagIds.push(tagId);
-      if (!cb.checked && has) entry.tagIds = entry.tagIds.filter((id) => id !== tagId);
+  bible.books
+    .filter((b) => b.testament === pickerTestament)
+    .forEach((book) => {
+      const item = document.createElement("button");
+      item.className = "picker-book-item";
+      item.textContent = book.name;
+      item.addEventListener("click", () => renderPickerChapterGrid(book));
+      list.appendChild(item);
     });
+}
 
-    if (note) entry.note = note;
-    else if (selection.size === 1) entry.note = "";
+function renderPickerChapterGrid(book) {
+  pickerBookId = book.id;
+  el("pickerBookList").classList.add("hidden");
+  const grid = el("pickerChapterGrid");
+  grid.innerHTML = "";
+  grid.classList.remove("hidden");
 
-    if (entry.tagIds.length === 0 && !entry.note) delete tagsData.verseTags[key];
+  const backBtn = document.createElement("button");
+  backBtn.className = "picker-back";
+  backBtn.textContent = "‹ Books";
+  backBtn.addEventListener("click", () => {
+    grid.classList.add("hidden");
+    el("pickerBookList").classList.remove("hidden");
   });
+  grid.appendChild(backBtn);
 
-  el("tagPickerOverlay").classList.add("hidden");
-  selection.clear();
-  applySelectionClasses();
-  updateSelectionBar();
-  renderVerses();
-  renderTagList();
-  scheduleSave();
+  book.chapters.forEach((_, idx) => {
+    const chapNum = idx + 1;
+    const item = document.createElement("button");
+    item.className = "picker-chapter-item";
+    item.textContent = chapNum;
+    item.addEventListener("click", () => {
+      el("pickerOverlay").classList.add("hidden");
+      selectBook(book.id, chapNum);
+    });
+    grid.appendChild(item);
+  });
+}
+
+document.addEventListener("click", (e) => {
+  if (e.target === el("pickerOverlay")) el("pickerOverlay").classList.add("hidden");
 });
 
-function removeTagFromVerse(key, tagId) {
+// ---------- Verse detail view ----------
+
+function openVerseDetail(key) {
+  currentVerseKey = key;
+  const { bookId, chapter, verse } = parseVerseKey(key);
+  const book = booksById.get(bookId);
+  const text = book.chapters[chapter - 1][verse - 1];
+
+  el("verseDetailRef").textContent = refLabel(bookId, chapter, verse);
+  el("verseDetailText").textContent = text;
+  el("verseDetailNotes").value = tagsData.verseTags[key]?.note || "";
+
+  renderVerseDetailTags();
+  showView("verse");
+}
+
+function renderVerseDetailTags() {
+  const container = el("verseDetailTags");
+  container.innerHTML = "";
+  const entry = tagsData.verseTags[currentVerseKey];
+
+  if (entry && entry.tagIds) {
+    entry.tagIds.forEach((tagId) => {
+      const tag = tagsData.tags.find((t) => t.id === tagId);
+      if (!tag) return;
+      const { bg, text: fg } = chipColors(tag.hue);
+      const chip = document.createElement("button");
+      chip.className = "tag-chip-removable";
+      chip.style.background = bg;
+      chip.style.color = fg;
+      chip.innerHTML = `<span>${escapeHtml(tag.name)}</span><span class="x">×</span>`;
+      chip.addEventListener("click", () => {
+        toggleVerseTag(currentVerseKey, tagId);
+        renderVerseDetailTags();
+        renderVerses();
+      });
+      container.appendChild(chip);
+    });
+  }
+
+  const addBtn = document.createElement("button");
+  addBtn.className = "tag-add-btn";
+  addBtn.textContent = "+ add tag";
+  addBtn.addEventListener("click", () => openTagAssign(currentVerseKey, true));
+  container.appendChild(addBtn);
+}
+
+el("verseDetailNotes").addEventListener("input", () => {
+  const key = currentVerseKey;
+  if (!tagsData.verseTags[key]) tagsData.verseTags[key] = { tagIds: [], note: "" };
+  tagsData.verseTags[key].note = el("verseDetailNotes").value;
+  if (!tagsData.verseTags[key].tagIds.length && !tagsData.verseTags[key].note) delete tagsData.verseTags[key];
+
+  clearTimeout(notesSaveTimer);
+  notesSaveTimer = setTimeout(saveTags, 600);
+});
+
+// ---------- Tag assignment ----------
+
+function toggleVerseTag(key, tagId) {
+  if (!tagsData.verseTags[key]) tagsData.verseTags[key] = { tagIds: [], note: "" };
   const entry = tagsData.verseTags[key];
-  if (!entry) return;
-  entry.tagIds = entry.tagIds.filter((id) => id !== tagId);
-  if (entry.tagIds.length === 0 && !entry.note) delete tagsData.verseTags[key];
-  renderVerses();
-  renderTagList();
-  if (currentView === "tag") renderTagView(activeTagId);
+  if (entry.tagIds.includes(tagId)) {
+    entry.tagIds = entry.tagIds.filter((id) => id !== tagId);
+  } else {
+    entry.tagIds.push(tagId);
+  }
+  if (!entry.tagIds.length && !entry.note) delete tagsData.verseTags[key];
   scheduleSave();
 }
 
-// ---------- Tags panel (CRUD) ----------
-
-let editingTagId = null;
-
-el("newTagBtn").addEventListener("click", () => {
-  editingTagId = null;
-  el("tagEditTitle").textContent = "New Tag";
-  el("tagName").value = "";
-  el("tagColor").value = randomColor();
-  el("tagDeleteBtn").classList.add("hidden");
-  el("tagEditOverlay").classList.remove("hidden");
-});
-
-function randomColor() {
-  const palette = ["#e0a72e", "#3f9d5c", "#4a7bd4", "#c25b8b", "#7a5cc2", "#d4603f", "#4bb2b8"];
-  return palette[Math.floor(Math.random() * palette.length)];
+function openTagAssign(key, fromDetail) {
+  tagAssignVerseKey = key;
+  const { bookId, chapter, verse } = parseVerseKey(key);
+  el("tagAssignRef").textContent = refLabel(bookId, chapter, verse);
+  renderTagAssignList();
+  el("tagAssignOverlay").classList.remove("hidden");
+  el("tagAssignOverlay").dataset.fromDetail = fromDetail ? "1" : "";
 }
 
-function renderTagList() {
-  const list = el("tagList");
+function renderTagAssignList() {
+  const list = el("tagAssignList");
   list.innerHTML = "";
 
   if (tagsData.tags.length === 0) {
-    list.innerHTML = '<div class="tag-empty">No tags yet. Create one to start categorizing verses.</div>';
+    list.innerHTML = '<div class="empty-msg">No tags yet — create one below.</div>';
     return;
   }
+
+  const entry = tagsData.verseTags[tagAssignVerseKey];
+  const activeIds = entry ? entry.tagIds : [];
+
+  tagsData.tags.forEach((tag) => {
+    const selected = activeIds.includes(tag.id);
+    const btn = document.createElement("button");
+    btn.className = "tag-toggle-pill";
+    btn.textContent = tag.name;
+    if (selected) {
+      const { bg, text: fg } = chipColors(tag.hue);
+      btn.style.background = bg;
+      btn.style.color = fg;
+      btn.style.borderColor = "transparent";
+    }
+    btn.addEventListener("click", () => {
+      toggleVerseTag(tagAssignVerseKey, tag.id);
+      renderTagAssignList();
+      renderVerses();
+      if (currentView === "verse") renderVerseDetailTags();
+      if (currentView === "tags") renderTagsView();
+    });
+    list.appendChild(btn);
+  });
+}
+
+el("tagAssignDoneBtn").addEventListener("click", () => {
+  el("tagAssignOverlay").classList.add("hidden");
+});
+
+el("tagAssignOverlay").addEventListener("click", (e) => {
+  if (e.target === el("tagAssignOverlay")) el("tagAssignOverlay").classList.add("hidden");
+});
+
+// ---------- New tag creation ----------
+
+let selectedHue = HUE_PRESETS[0];
+
+el("tagAssignAddBtn").addEventListener("click", () => {
+  el("newTagName").value = "";
+  selectedHue = HUE_PRESETS[Math.floor(Math.random() * HUE_PRESETS.length)];
+  renderHueSwatches();
+  el("newTagOverlay").classList.remove("hidden");
+});
+
+function renderHueSwatches() {
+  const container = el("hueSwatches");
+  container.innerHTML = "";
+  HUE_PRESETS.forEach((hue) => {
+    const swatch = document.createElement("button");
+    swatch.type = "button";
+    swatch.className = "hue-swatch" + (hue === selectedHue ? " selected" : "");
+    swatch.style.background = `oklch(0.75 0.13 ${hue})`;
+    swatch.addEventListener("click", () => {
+      selectedHue = hue;
+      renderHueSwatches();
+    });
+    container.appendChild(swatch);
+  });
+}
+
+el("newTagCancel").addEventListener("click", () => el("newTagOverlay").classList.add("hidden"));
+
+el("newTagForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const name = el("newTagName").value.trim();
+  if (!name) return;
+
+  const tag = { id: crypto.randomUUID(), name, hue: selectedHue };
+  tagsData.tags.push(tag);
+  toggleVerseTag(tagAssignVerseKey, tag.id);
+
+  el("newTagOverlay").classList.add("hidden");
+  renderTagAssignList();
+  renderVerses();
+  if (currentView === "verse") renderVerseDetailTags();
+});
+
+// ---------- Tags browse view ----------
+
+function renderTagsView() {
+  renderTagFilterBar();
+  renderTagVerseList();
+}
+
+function renderTagFilterBar() {
+  const bar = el("tagFilterBar");
+  bar.innerHTML = "";
+
+  const allBtn = document.createElement("button");
+  allBtn.className = "filter-pill" + (activeTagFilter === null ? " active" : "");
+  allBtn.textContent = "All";
+  allBtn.addEventListener("click", () => {
+    activeTagFilter = null;
+    renderTagsView();
+  });
+  bar.appendChild(allBtn);
 
   tagsData.tags.forEach((tag) => {
     const count = Object.values(tagsData.verseTags).filter((e) => e.tagIds.includes(tag.id)).length;
-
-    const row = document.createElement("div");
-    row.className = "tag-row" + (activeTagId === tag.id && currentView === "tag" ? " active" : "");
-    row.innerHTML = `
-      <span class="tag-swatch" style="background:${tag.color}"></span>
-      <span class="tag-row-name">${escapeHtml(tag.name)}</span>
-      <span class="tag-row-count">${count}</span>
-      <button class="tag-row-edit" title="Edit tag">✎</button>
-    `;
-    row.addEventListener("click", (e) => {
-      if (e.target.closest(".tag-row-edit")) return;
-      activeTagId = tag.id;
-      showView("tag");
-      renderTagView(tag.id);
-      renderTagList();
+    const btn = document.createElement("button");
+    btn.className = "filter-pill" + (activeTagFilter === tag.id ? " active" : "");
+    btn.textContent = `${tag.name} · ${count}`;
+    btn.addEventListener("click", () => {
+      activeTagFilter = tag.id;
+      renderTagsView();
     });
-    row.querySelector(".tag-row-edit").addEventListener("click", (e) => {
-      e.stopPropagation();
-      openTagEditor(tag);
-    });
-    list.appendChild(row);
+    bar.appendChild(btn);
   });
 }
 
-function openTagEditor(tag) {
-  editingTagId = tag.id;
-  el("tagEditTitle").textContent = "Edit Tag";
-  el("tagName").value = tag.name;
-  el("tagColor").value = tag.color;
-  el("tagDeleteBtn").classList.remove("hidden");
-  el("tagEditOverlay").classList.remove("hidden");
-}
-
-el("tagEditCancel").addEventListener("click", () => el("tagEditOverlay").classList.add("hidden"));
-
-el("tagEditForm").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const name = el("tagName").value.trim();
-  const color = el("tagColor").value;
-  if (!name) return;
-
-  if (editingTagId) {
-    const tag = tagsData.tags.find((t) => t.id === editingTagId);
-    tag.name = name;
-    tag.color = color;
-  } else {
-    tagsData.tags.push({ id: crypto.randomUUID(), name, color });
-  }
-
-  el("tagEditOverlay").classList.add("hidden");
-  renderTagList();
-  renderVerses();
-  if (currentView === "tag" && activeTagId) renderTagView(activeTagId);
-  scheduleSave();
-});
-
-el("tagDeleteBtn").addEventListener("click", () => {
-  if (!editingTagId) return;
-  if (!confirm("Delete this tag? It will be removed from every verse.")) return;
-
-  tagsData.tags = tagsData.tags.filter((t) => t.id !== editingTagId);
-  for (const key of Object.keys(tagsData.verseTags)) {
-    const entry = tagsData.verseTags[key];
-    entry.tagIds = entry.tagIds.filter((id) => id !== editingTagId);
-    if (entry.tagIds.length === 0 && !entry.note) delete tagsData.verseTags[key];
-  }
-
-  if (activeTagId === editingTagId) {
-    activeTagId = null;
-    showView("read");
-  }
-
-  el("tagEditOverlay").classList.add("hidden");
-  renderTagList();
-  renderVerses();
-  scheduleSave();
-});
-
-// ---------- Tag view (browse verses by tag) ----------
-
-function renderTagView(tagId) {
-  const tag = tagsData.tags.find((t) => t.id === tagId);
-  if (!tag) return;
-
-  el("tagViewHeading").innerHTML = `<span class="tag-swatch" style="background:${tag.color};display:inline-block;margin-right:8px;"></span>${escapeHtml(tag.name)}`;
+function renderTagVerseList() {
+  const container = el("tagVerseList");
+  container.innerHTML = "";
 
   const entries = Object.entries(tagsData.verseTags)
-    .filter(([, entry]) => entry.tagIds.includes(tagId))
+    .filter(([, entry]) => (activeTagFilter ? entry.tagIds.includes(activeTagFilter) : true))
     .map(([key]) => ({ key, ...parseVerseKey(key) }))
     .sort((a, b) => {
       const oa = booksById.get(a.bookId)?.order ?? 0;
@@ -481,11 +505,8 @@ function renderTagView(tagId) {
       return oa - ob || a.chapter - b.chapter || a.verse - b.verse;
     });
 
-  const container = el("tagVerses");
-  container.innerHTML = "";
-
   if (entries.length === 0) {
-    container.innerHTML = '<div class="tag-empty">No verses tagged yet. Select verses in the reader and choose "Tag selected…".</div>';
+    container.innerHTML = '<div class="empty-msg">No tagged verses yet. Open a verse and use "+ tag" to start.</div>';
     return;
   }
 
@@ -494,38 +515,37 @@ function renderTagView(tagId) {
     const text = book.chapters[chapter - 1][verse - 1];
     const entry = tagsData.verseTags[key];
 
-    const item = document.createElement("div");
-    item.className = "tag-verse-item";
-    item.innerHTML = `
-      <div class="tag-verse-ref">${refLabel(bookId, chapter, verse)}</div>
-      <div class="tag-verse-text">${escapeHtml(text)}</div>
-      ${entry.note ? `<div class="verse-note">${escapeHtml(entry.note)}</div>` : ""}
+    const card = document.createElement("div");
+    card.className = "verse-card";
+    card.innerHTML = `
+      <div class="card-ref">${refLabel(bookId, chapter, verse)}</div>
+      <div class="card-text">${escapeHtml(text.length > 140 ? text.slice(0, 140) + "…" : text)}</div>
+      <div class="card-tags"></div>
     `;
-    item.addEventListener("click", () => {
-      selectBook(bookId, chapter);
-      setTimeout(() => renderVerses(verse), 0);
+    const tagsRow = card.querySelector(".card-tags");
+    entry.tagIds.forEach((tagId) => {
+      const tag = tagsData.tags.find((t) => t.id === tagId);
+      if (!tag) return;
+      const { bg, text: fg } = chipColors(tag.hue);
+      const chip = document.createElement("span");
+      chip.className = "tag-chip";
+      chip.style.background = bg;
+      chip.style.color = fg;
+      chip.textContent = tag.name;
+      tagsRow.appendChild(chip);
     });
-    container.appendChild(item);
+
+    card.addEventListener("click", () => openVerseDetail(key));
+    container.appendChild(card);
   });
 }
 
-// ---------- View switching ----------
+// ---------- Search ----------
 
-function showView(view) {
-  currentView = view;
-  el("readView").classList.toggle("hidden", view !== "read");
-  el("searchView").classList.toggle("hidden", view !== "search");
-  el("tagView").classList.toggle("hidden", view !== "tag");
-  el("chapterBar").classList.toggle("hidden", view !== "read");
-  if (view !== "tag") {
-    activeTagId = null;
-    renderTagList();
-  }
-}
-
-// ---------- Search / jump box ----------
-
-const BOOK_NAME_ALIASES = null; // reserved for future alias support
+el("searchToggleBtn").addEventListener("click", () => {
+  el("searchBar").classList.toggle("hidden");
+  if (!el("searchBar").classList.contains("hidden")) el("searchInput").focus();
+});
 
 function findBookByName(query) {
   const q = query.trim().toLowerCase();
@@ -537,9 +557,9 @@ function findBookByName(query) {
   return bible.books.find((b) => b.name.toLowerCase().includes(q));
 }
 
-el("jumpBox").addEventListener("keydown", (e) => {
+el("searchInput").addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
-  const query = el("jumpBox").value.trim();
+  const query = el("searchInput").value.trim();
   if (!query) return;
 
   const refMatch = query.match(/^(.+?)\s+(\d+)(?::(\d+))?$/);
@@ -549,13 +569,21 @@ el("jumpBox").addEventListener("keydown", (e) => {
     if (book) {
       const chapter = Math.min(Math.max(1, Number(chapterStr)), book.chapters.length);
       selectBook(book.id, chapter);
-      if (verseStr) setTimeout(() => renderVerses(Number(verseStr)), 0);
+      if (verseStr) {
+        const v = Number(verseStr);
+        const text = book.chapters[chapter - 1][v - 1];
+        if (text) openVerseDetail(verseKey(book.id, chapter, v));
+      }
       return;
     }
   }
 
   runTextSearch(query);
 });
+
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 function runTextSearch(query) {
   const q = query.toLowerCase();
@@ -574,44 +602,32 @@ function runTextSearch(query) {
     }
   }
 
-  el("searchResults").innerHTML = "";
-  const heading = el("searchView").querySelector(".search-view-heading");
-  heading.textContent = `Search results for "${query}" (${results.length}${results.length >= 200 ? "+" : ""})`;
+  el("searchHeading").textContent = `Search results for "${query}" (${results.length}${results.length >= 200 ? "+" : ""})`;
 
   const container = el("searchResults");
+  container.innerHTML = "";
   if (results.length === 0) {
-    container.innerHTML = '<div class="tag-empty">No matches found.</div>';
+    container.innerHTML = '<div class="empty-msg">No matches found.</div>';
   } else {
     results.forEach(({ bookId, chapter, verse, text }) => {
-      const item = document.createElement("div");
-      item.className = "search-result";
-      const highlighted = escapeHtml(text).replace(
-        new RegExp(escapeRegExp(escapeHtml(query)), "ig"),
-        (m) => `<mark>${m}</mark>`
-      );
-      item.innerHTML = `
-        <div class="result-ref">${refLabel(bookId, chapter, verse)}</div>
-        <div class="result-text">${highlighted}</div>
+      const card = document.createElement("div");
+      card.className = "verse-card";
+      const highlighted = escapeHtml(text).replace(new RegExp(escapeRegExp(escapeHtml(query)), "ig"), (m) => `<mark>${m}</mark>`);
+      card.innerHTML = `
+        <div class="card-ref">${refLabel(bookId, chapter, verse)}</div>
+        <div class="card-text">${highlighted}</div>
       `;
-      item.addEventListener("click", () => {
-        selectBook(bookId, chapter);
-        setTimeout(() => renderVerses(verse), 0);
-      });
-      container.appendChild(item);
+      card.addEventListener("click", () => openVerseDetail(verseKey(bookId, chapter, verse)));
+      container.appendChild(card);
     });
   }
 
   showView("search");
 }
 
-function escapeRegExp(str) {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 // ---------- Persistence ----------
 
 function scheduleSave() {
-  setStatus("Saving…", "dirty");
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveTags, 500);
 }
@@ -624,10 +640,8 @@ async function saveTags() {
       body: JSON.stringify(tagsData),
     });
     if (!res.ok) throw new Error(`Save failed: ${res.status}`);
-    setStatus("Saved");
   } catch (err) {
     console.error(err);
-    setStatus("Error saving — check the server", "error");
   }
 }
 

@@ -3,97 +3,110 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Bible Study</title>
+<title>Anchor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <h1>📖 Bible Study</h1>
-    <div class="topbar-actions">
-      <input id="jumpBox" type="search" placeholder="Go to reference or search text… (e.g. John 3:16)" />
-      <span id="status" class="status">Loading…</span>
-    </div>
-  </header>
-
-  <div class="layout">
-    <nav class="sidebar" id="bookSidebar">
-      <div class="sidebar-section-label">Old Testament</div>
-      <div id="otBooks" class="book-list"></div>
-      <div class="sidebar-section-label">New Testament</div>
-      <div id="ntBooks" class="book-list"></div>
+  <div class="app-shell">
+    <nav class="sidebar">
+      <div class="sidebar-title">Anchor</div>
+      <button class="nav-item active" data-view="read">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M2 4.5C2 3.7 2.7 3 3.5 3H9v14H3.5c-.8 0-1.5-.7-1.5-1.5v-11ZM18 4.5c0-.8-.7-1.5-1.5-1.5H11v14h5.5c.8 0 1.5-.7 1.5-1.5v-11Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+        <span>Read</span>
+      </button>
+      <button class="nav-item" data-view="tags">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M10.6 2.5H4.8a1 1 0 0 0-1 1v5.8c0 .27.1.52.3.7l7 7c.4.4 1 .4 1.4 0l5.8-5.8c.4-.4.4-1 0-1.4l-7-7a1 1 0 0 0-.7-.3Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="6.8" cy="6.8" r="1" fill="currentColor"/></svg>
+        <span>Tags</span>
+      </button>
     </nav>
 
-    <main class="content">
-      <div id="chapterBar" class="chapter-bar hidden"></div>
-
-      <div id="readView" class="read-view">
-        <div id="chapterHeading" class="chapter-heading"></div>
-        <div id="verses" class="verses"></div>
+    <main class="main">
+      <div class="top-bar">
+        <div class="top-bar-left">
+          <button id="backBtn" class="icon-btn hidden" title="Back">‹</button>
+          <span id="breadcrumb">Reading</span>
+        </div>
+        <button id="searchToggleBtn" class="icon-btn" title="Search">
+          <svg viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.4"/><path d="M17 17l-3.5-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
       </div>
 
-      <div id="searchView" class="search-view hidden">
-        <div class="search-view-heading">Search results</div>
-        <div id="searchResults" class="search-results"></div>
+      <div id="searchBar" class="search-bar hidden">
+        <input id="searchInput" type="search" placeholder="Go to reference or search text… (e.g. John 3:16)" />
       </div>
 
-      <div id="tagView" class="tag-view hidden">
-        <div class="tag-view-heading" id="tagViewHeading"></div>
-        <div id="tagVerses" class="tag-verses"></div>
+      <div id="readView" class="view-content">
+        <div class="chapter-header">
+          <div class="chapter-title-row">
+            <button id="chapterPickerBtn" class="chapter-title-btn">
+              <h1 id="chapterHeading">Genesis 1</h1>
+              <span class="caret">▾</span>
+            </button>
+            <div class="chapter-nav">
+              <button id="prevChapterBtn" class="btn btn-outline btn-small">‹ Previous</button>
+              <button id="nextChapterBtn" class="btn btn-outline btn-small">Next ›</button>
+            </div>
+          </div>
+          <div class="version-label">King James Version</div>
+        </div>
+        <div id="verses" class="verse-list"></div>
+      </div>
+
+      <div id="verseView" class="view-content hidden">
+        <div class="verse-detail-ref" id="verseDetailRef"></div>
+        <div class="verse-detail-text" id="verseDetailText"></div>
+        <div class="verse-detail-tags" id="verseDetailTags"></div>
+        <div class="notes-label">MY NOTES</div>
+        <textarea id="verseDetailNotes" placeholder="Write what this verse means to you…"></textarea>
+      </div>
+
+      <div id="tagsView" class="view-content hidden">
+        <h1 class="page-heading">Tagged Verses</h1>
+        <div id="tagFilterBar" class="tag-filter-bar"></div>
+        <div id="tagVerseList" class="verse-card-list"></div>
+      </div>
+
+      <div id="searchView" class="view-content hidden">
+        <h1 class="page-heading" id="searchHeading">Search results</h1>
+        <div id="searchResults" class="verse-card-list"></div>
+      </div>
+
+      <div id="pickerOverlay" class="picker-overlay hidden">
+        <div class="picker-tabs">
+          <button class="picker-tab active" data-testament="OT">Old Testament</button>
+          <button class="picker-tab" data-testament="NT">New Testament</button>
+        </div>
+        <div id="pickerBookList" class="picker-book-list"></div>
+        <div id="pickerChapterGrid" class="picker-chapter-grid hidden"></div>
       </div>
     </main>
-
-    <aside class="tags-panel">
-      <div class="tags-panel-header">
-        <span>Tags</span>
-        <button id="newTagBtn" class="btn btn-primary btn-small">+ New Tag</button>
-      </div>
-      <div id="tagList" class="tag-list"></div>
-    </aside>
   </div>
 
-  <div id="selectionBar" class="selection-bar hidden">
-    <span id="selectionCount"></span>
-    <div class="selection-actions">
-      <button id="tagSelectionBtn" class="btn btn-primary btn-small">Tag selected…</button>
-      <button id="clearSelectionBtn" class="btn btn-small">Clear</button>
-    </div>
-  </div>
-
-  <!-- Tag picker modal: assign tags to selected verses -->
-  <div id="tagPickerOverlay" class="modal-overlay hidden">
-    <div class="modal">
-      <h2>Assign tags</h2>
-      <div id="tagPickerList" class="tag-picker-list"></div>
-      <label class="note-label">Note
-        <textarea id="verseNote" rows="3" placeholder="Optional note for the selected verse(s)…"></textarea>
-      </label>
+  <div id="tagAssignOverlay" class="modal-overlay hidden">
+    <div class="modal tag-assign-modal">
+      <div class="modal-ref" id="tagAssignRef"></div>
+      <div id="tagAssignList" class="tag-assign-list"></div>
       <div class="modal-actions">
-        <div></div>
-        <div class="modal-actions-right">
-          <button type="button" id="tagPickerCancel" class="btn">Close</button>
-          <button type="button" id="tagPickerApply" class="btn btn-primary">Apply</button>
-        </div>
+        <button id="tagAssignAddBtn" type="button" class="btn btn-accent-solid">+ Add</button>
+        <button id="tagAssignDoneBtn" type="button" class="btn btn-outline">Done</button>
       </div>
     </div>
   </div>
 
-  <!-- New/edit tag modal -->
-  <div id="tagEditOverlay" class="modal-overlay hidden">
+  <div id="newTagOverlay" class="modal-overlay hidden">
     <div class="modal">
-      <h2 id="tagEditTitle">New Tag</h2>
-      <form id="tagEditForm">
+      <h2>New Tag</h2>
+      <form id="newTagForm">
         <label>Name
-          <input type="text" id="tagName" required maxlength="40" />
+          <input type="text" id="newTagName" required maxlength="30" placeholder="e.g. Faith" />
         </label>
-        <label>Color
-          <input type="color" id="tagColor" value="#e0a72e" />
-        </label>
+        <div class="hue-swatches" id="hueSwatches"></div>
         <div class="modal-actions">
-          <button type="button" id="tagDeleteBtn" class="btn btn-danger hidden">Delete</button>
-          <div class="modal-actions-right">
-            <button type="button" id="tagEditCancel" class="btn">Cancel</button>
-            <button type="submit" class="btn btn-primary">Save Tag</button>
-          </div>
+          <button type="button" id="newTagCancel" class="btn btn-outline">Cancel</button>
+          <button type="submit" class="btn btn-accent-solid">Create</button>
         </div>
       </form>
     </div>
