@@ -5,8 +5,8 @@ const DEFAULT_TAGS = { tags: [], verseTags: {} };
 function openStore() {
   // Automatic context injection is unreliable on some sites (a known Netlify
   // platform issue), so fall back to explicit siteID/token when provided.
-  const siteID = process.env.NETLIFY_SITE_ID;
-  const token = process.env.NETLIFY_AUTH_TOKEN;
+  const siteID = process.env.BLOBS_SITE_ID;
+  const token = process.env.BLOBS_AUTH_TOKEN;
   if (siteID && token) {
     return getStore("bible-tags", { siteID, token });
   }
