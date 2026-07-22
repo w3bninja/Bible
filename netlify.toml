@@ -1,0 +1,12 @@
+[build]
+  command = "npm install"
+  publish = "."
+
+[functions]
+  directory = "netlify/functions"
+
+[[redirects]]
+  from = "/api/tags"
+  to = "/.netlify/functions/tags"
+  status = 200
+  force = true

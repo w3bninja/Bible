@@ -41,7 +41,7 @@ async function init() {
   try {
     const [bibleData, tagsJson] = await Promise.all([
       fetchJSON("data/bible.json"),
-      fetchJSON("data/tags.json").catch(() => ({ tags: [], verseTags: {} })),
+      fetchJSON("/api/tags").catch(() => ({ tags: [], verseTags: {} })),
     ]);
     bible = bibleData;
     tagsData = tagsJson;

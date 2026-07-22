@@ -33,7 +33,12 @@ while ($listener.IsListening) {
   try {
     $path = $request.Url.AbsolutePath
 
-    if ($path -eq "/api/tags" -and $request.HttpMethod -eq "POST") {
+    if ($path -eq "/api/tags" -and $request.HttpMethod -eq "GET") {
+      $bytes = [System.IO.File]::ReadAllBytes($tagsPath)
+      $response.ContentType = "application/json"
+      $response.OutputStream.Write($bytes, 0, $bytes.Length)
+    }
+    elseif ($path -eq "/api/tags" -and $request.HttpMethod -eq "POST") {
       $reader = New-Object System.IO.StreamReader($request.InputStream, $request.ContentEncoding)
       $body = $reader.ReadToEnd()
       $reader.Close()
