@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bible Study</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>📖 Bible Study</h1>
+    <div class="topbar-actions">
+      <input id="jumpBox" type="search" placeholder="Go to reference or search text… (e.g. John 3:16)" />
+      <span id="status" class="status">Loading…</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="bookSidebar">
+      <div class="sidebar-section-label">Old Testament</div>
+      <div id="otBooks" class="book-list"></div>
+      <div class="sidebar-section-label">New Testament</div>
+      <div id="ntBooks" class="book-list"></div>
+    </nav>
+
+    <main class="content">
+      <div id="chapterBar" class="chapter-bar hidden"></div>
+
+      <div id="readView" class="read-view">
+        <div id="chapterHeading" class="chapter-heading"></div>
+        <div id="verses" class="verses"></div>
+      </div>
+
+      <div id="searchView" class="search-view hidden">
+        <div class="search-view-heading">Search results</div>
+        <div id="searchResults" class="search-results"></div>
+      </div>
+
+      <div id="tagView" class="tag-view hidden">
+        <div class="tag-view-heading" id="tagViewHeading"></div>
+        <div id="tagVerses" class="tag-verses"></div>
+      </div>
+    </main>
+
+    <aside class="tags-panel">
+      <div class="tags-panel-header">
+        <span>Tags</span>
+        <button id="newTagBtn" class="btn btn-primary btn-small">+ New Tag</button>
+      </div>
+      <div id="tagList" class="tag-list"></div>
+    </aside>
+  </div>
+
+  <div id="selectionBar" class="selection-bar hidden">
+    <span id="selectionCount"></span>
+    <div class="selection-actions">
+      <button id="tagSelectionBtn" class="btn btn-primary btn-small">Tag selected…</button>
+      <button id="clearSelectionBtn" class="btn btn-small">Clear</button>
+    </div>
+  </div>
+
+  <!-- Tag picker modal: assign tags to selected verses -->
+  <div id="tagPickerOverlay" class="modal-overlay hidden">
+    <div class="modal">
+      <h2>Assign tags</h2>
+      <div id="tagPickerList" class="tag-picker-list"></div>
+      <label class="note-label">Note
+        <textarea id="verseNote" rows="3" placeholder="Optional note for the selected verse(s)…"></textarea>
+      </label>
+      <div class="modal-actions">
+        <div></div>
+        <div class="modal-actions-right">
+          <button type="button" id="tagPickerCancel" class="btn">Close</button>
+          <button type="button" id="tagPickerApply" class="btn btn-primary">Apply</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- New/edit tag modal -->
+  <div id="tagEditOverlay" class="modal-overlay hidden">
+    <div class="modal">
+      <h2 id="tagEditTitle">New Tag</h2>
+      <form id="tagEditForm">
+        <label>Name
+          <input type="text" id="tagName" required maxlength="40" />
+        </label>
+        <label>Color
+          <input type="color" id="tagColor" value="#e0a72e" />
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="tagDeleteBtn" class="btn btn-danger hidden">Delete</button>
+          <div class="modal-actions-right">
+            <button type="button" id="tagEditCancel" class="btn">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Tag</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
