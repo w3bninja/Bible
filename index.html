@@ -26,16 +26,17 @@
     <main class="main">
       <div class="top-bar">
         <div class="top-bar-left">
-          <button id="backBtn" class="icon-btn hidden" title="Back">‹</button>
+          <button id="collapseBtn" class="icon-btn-outline" title="Toggle sidebar">
+            <svg viewBox="0 0 20 20" fill="none"><rect x="2" y="3" width="7" height="14" rx="1.5" stroke="currentColor" stroke-width="1.6"/><rect x="11" y="3" width="7" height="14" rx="1.5" stroke="currentColor" stroke-width="1.6"/></svg>
+          </button>
+          <button id="backBtn" class="icon-btn-outline hidden" title="Back">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
           <span id="breadcrumb">Reading</span>
         </div>
         <button id="searchToggleBtn" class="icon-btn" title="Search">
           <svg viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.4"/><path d="M17 17l-3.5-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
         </button>
-      </div>
-
-      <div id="searchBar" class="search-bar hidden">
-        <input id="searchInput" type="search" placeholder="Go to reference or search text… (e.g. John 3:16)" />
       </div>
 
       <div id="readView" class="view-content">
@@ -70,7 +71,9 @@
       </div>
 
       <div id="searchView" class="view-content hidden">
-        <h1 class="page-heading" id="searchHeading">Search results</h1>
+        <input id="searchInput" type="search" class="search-input" placeholder="Search verses or tags…" />
+        <div id="searchEmptyHint" class="search-hint">Try &ldquo;peace&rdquo;, &ldquo;comfort&rdquo;, or a reference like John 3:16.</div>
+        <h1 class="page-heading hidden" id="searchHeading">Search results</h1>
         <div id="searchResults" class="verse-card-list"></div>
       </div>
 

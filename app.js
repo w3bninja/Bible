@@ -85,8 +85,10 @@ function showView(view) {
   el("verseView").classList.toggle("hidden", view !== "verse");
   el("tagsView").classList.toggle("hidden", view !== "tags");
   el("searchView").classList.toggle("hidden", view !== "search");
-  el("backBtn").classList.toggle("hidden", view !== "verse");
-  el("searchBar").classList.add("hidden");
+
+  const showBack = view === "verse" || view === "search";
+  el("backBtn").classList.toggle("hidden", !showBack);
+  el("collapseBtn").classList.toggle("hidden", showBack);
 
   const breadcrumbs = { read: "Reading", verse: "Verse & Notes", tags: "Your tagged verses", search: "Search" };
   el("breadcrumb").textContent = breadcrumbs[view] || "";
@@ -108,6 +110,15 @@ document.querySelectorAll(".nav-item").forEach((item) => {
 });
 
 el("backBtn").addEventListener("click", () => showView("read"));
+
+el("collapseBtn").addEventListener("click", () => {
+  const collapsed = document.querySelector(".app-shell").classList.toggle("sidebar-collapsed");
+  localStorage.setItem("bible-study:sidebarCollapsed", collapsed ? "1" : "0");
+});
+
+if (localStorage.getItem("bible-study:sidebarCollapsed") === "1") {
+  document.querySelector(".app-shell").classList.add("sidebar-collapsed");
+}
 
 // ---------- Read view ----------
 
@@ -543,8 +554,12 @@ function renderTagVerseList() {
 // ---------- Search ----------
 
 el("searchToggleBtn").addEventListener("click", () => {
-  el("searchBar").classList.toggle("hidden");
-  if (!el("searchBar").classList.contains("hidden")) el("searchInput").focus();
+  el("searchInput").value = "";
+  el("searchHeading").classList.add("hidden");
+  el("searchEmptyHint").classList.remove("hidden");
+  el("searchResults").innerHTML = "";
+  showView("search");
+  el("searchInput").focus();
 });
 
 function findBookByName(query) {
@@ -602,6 +617,8 @@ function runTextSearch(query) {
     }
   }
 
+  el("searchEmptyHint").classList.add("hidden");
+  el("searchHeading").classList.remove("hidden");
   el("searchHeading").textContent = `Search results for "${query}" (${results.length}${results.length >= 200 ? "+" : ""})`;
 
   const container = el("searchResults");
