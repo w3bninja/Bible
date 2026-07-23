@@ -136,39 +136,47 @@ function renderReadView() {
   renderVerses();
 }
 
-// Section headings keyed by book id -> chapter -> verse number they precede.
-// KJV's original text has no headings; populated only if/when a headings
-// source is wired in, so this stays a harmless no-op until then.
-const SECTION_HEADINGS = {};
-
-function getSectionHeading(bookId, chapter, verseNum) {
-  return SECTION_HEADINGS[bookId]?.[chapter]?.[verseNum] || null;
-}
-
 function renderVerses() {
   const book = booksById.get(currentBookId);
-  const verseTextArr = book.chapters[currentChapter - 1];
+  const chapter = book.chapters[currentChapter - 1];
   const container = el("verses");
   container.innerHTML = "";
 
-  verseTextArr.forEach((text, idx) => {
-    const verseNum = idx + 1;
-    const key = verseKey(book.id, currentChapter, verseNum);
+  if (chapter.heading) {
+    const h = document.createElement("div");
+    h.className = "section-title";
+    h.textContent = chapter.heading;
+    container.appendChild(h);
+  }
 
-    const heading = getSectionHeading(book.id, currentChapter, verseNum);
-    if (heading) {
-      const h = document.createElement("span");
-      h.className = "section-title";
-      h.textContent = heading;
-      container.appendChild(h);
+  let proseP = null;
+  let lastVerse = null;
+
+  chapter.lines.forEach((line) => {
+    const key = verseKey(book.id, currentChapter, line.verse);
+    const showNum = line.verse !== lastVerse;
+    lastVerse = line.verse;
+
+    if (line.poetic) {
+      proseP = null;
+      const lineDiv = document.createElement("div");
+      lineDiv.className =
+        "poetry-line" + (line.indent === 2 ? " indent-2" : line.indent === 3 ? " indent-3" : "") + (line.newPara ? " stanza-break" : "");
+      lineDiv.appendChild(buildVerseSpan(key, line.text, showNum, line.verse));
+      container.appendChild(lineDiv);
+    } else {
+      if (!proseP || line.newPara) {
+        proseP = document.createElement("p");
+        proseP.className = "prose-para";
+        container.appendChild(proseP);
+      }
+      proseP.appendChild(buildVerseSpan(key, line.text, showNum, line.verse));
+      proseP.appendChild(document.createTextNode(" "));
     }
-
-    container.appendChild(buildVerseInline(key, verseNum, text));
-    container.appendChild(document.createTextNode(" "));
   });
 }
 
-function buildVerseInline(key, verseNum, text) {
+function buildVerseSpan(key, text, showNum, verseNum) {
   const span = document.createElement("span");
   span.className = "verse-inline";
 
@@ -184,10 +192,12 @@ function buildVerseInline(key, verseNum, text) {
     }
   }
 
-  const num = document.createElement("span");
-  num.className = "verse-num-inline";
-  num.textContent = verseNum;
-  span.appendChild(num);
+  if (showNum) {
+    const num = document.createElement("span");
+    num.className = "verse-num-inline";
+    num.textContent = verseNum;
+    span.appendChild(num);
+  }
   span.appendChild(document.createTextNode(text));
 
   span.addEventListener("click", () => openVerseDetail(key));
@@ -297,7 +307,7 @@ function openVerseDetail(key) {
   currentVerseKey = key;
   const { bookId, chapter, verse } = parseVerseKey(key);
   const book = booksById.get(bookId);
-  const text = book.chapters[chapter - 1][verse - 1];
+  const text = book.chapters[chapter - 1].verses[verse - 1];
 
   el("verseDetailRef").textContent = refLabel(bookId, chapter, verse);
   el("verseDetailText").textContent = text;
@@ -510,7 +520,7 @@ function renderTagVerseList() {
 
   entries.forEach(({ key, bookId, chapter, verse }) => {
     const book = booksById.get(bookId);
-    const text = book.chapters[chapter - 1][verse - 1];
+    const text = book.chapters[chapter - 1].verses[verse - 1];
     const entry = tagsData.verseTags[key];
 
     const card = document.createElement("div");
@@ -573,7 +583,7 @@ el("searchInput").addEventListener("keydown", (e) => {
       selectBook(book.id, chapter);
       if (verseStr) {
         const v = Number(verseStr);
-        const text = book.chapters[chapter - 1][v - 1];
+        const text = book.chapters[chapter - 1].verses[v - 1];
         if (text) openVerseDetail(verseKey(book.id, chapter, v));
       }
       return;
@@ -594,7 +604,7 @@ function runTextSearch(query) {
   outer:
   for (const book of bible.books) {
     for (let c = 0; c < book.chapters.length; c++) {
-      const chapterVerses = book.chapters[c];
+      const chapterVerses = book.chapters[c].verses;
       for (let v = 0; v < chapterVerses.length; v++) {
         if (chapterVerses[v].toLowerCase().includes(q)) {
           results.push({ bookId: book.id, chapter: c + 1, verse: v + 1, text: chapterVerses[v] });

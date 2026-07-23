@@ -280,6 +280,20 @@ textarea, input {
 
 .section-title:first-child { margin-top: 0; }
 
+.prose-para {
+  margin: 0 0 18px;
+}
+
+.prose-para:last-child { margin-bottom: 0; }
+
+.poetry-line {
+  margin: 0 0 2px;
+}
+
+.poetry-line.indent-2 { padding-left: 28px; }
+.poetry-line.indent-3 { padding-left: 52px; }
+.poetry-line.stanza-break { margin-top: 16px; }
+
 .verse-inline {
   cursor: pointer;
   border-radius: 3px;
