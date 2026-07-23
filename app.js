@@ -136,6 +136,15 @@ function renderReadView() {
   renderVerses();
 }
 
+// Section headings keyed by book id -> chapter -> verse number they precede.
+// KJV's original text has no headings; populated only if/when a headings
+// source is wired in, so this stays a harmless no-op until then.
+const SECTION_HEADINGS = {};
+
+function getSectionHeading(bookId, chapter, verseNum) {
+  return SECTION_HEADINGS[bookId]?.[chapter]?.[verseNum] || null;
+}
+
 function renderVerses() {
   const book = booksById.get(currentBookId);
   const verseTextArr = book.chapters[currentChapter - 1];
@@ -145,66 +154,44 @@ function renderVerses() {
   verseTextArr.forEach((text, idx) => {
     const verseNum = idx + 1;
     const key = verseKey(book.id, currentChapter, verseNum);
-    container.appendChild(buildVerseRow(key, verseNum, text));
+
+    const heading = getSectionHeading(book.id, currentChapter, verseNum);
+    if (heading) {
+      const h = document.createElement("span");
+      h.className = "section-title";
+      h.textContent = heading;
+      container.appendChild(h);
+    }
+
+    container.appendChild(buildVerseInline(key, verseNum, text));
+    container.appendChild(document.createTextNode(" "));
   });
 }
 
-function buildVerseRow(key, verseNum, text) {
-  const row = document.createElement("div");
-  row.className = "verse-row";
-
-  const num = document.createElement("div");
-  num.className = "verse-num";
-  num.textContent = verseNum;
-
-  const body = document.createElement("div");
-  body.className = "verse-body";
-
-  const textEl = document.createElement("div");
-  textEl.className = "verse-text";
-  textEl.textContent = text;
-  textEl.addEventListener("click", () => openVerseDetail(key));
-  body.appendChild(textEl);
-
-  const footer = document.createElement("div");
-  footer.className = "verse-footer";
-
-  const left = document.createElement("div");
-  left.className = "verse-footer-left";
+function buildVerseInline(key, verseNum, text) {
+  const span = document.createElement("span");
+  span.className = "verse-inline";
 
   const entry = tagsData.verseTags[key];
-  if (entry && entry.tagIds && entry.tagIds.length) {
-    entry.tagIds.forEach((tagId) => {
-      const tag = tagsData.tags.find((t) => t.id === tagId);
-      if (!tag) return;
-      const { bg, text: fg } = chipColors(tag.hue);
-      const chip = document.createElement("span");
-      chip.className = "tag-chip";
-      chip.style.background = bg;
-      chip.style.color = fg;
-      chip.textContent = tag.name;
-      left.appendChild(chip);
-    });
+  const tagIds = (entry && entry.tagIds) || [];
+  if (tagIds.length) {
+    span.classList.add("tagged");
+    const firstTag = tagsData.tags.find((t) => t.id === tagIds[0]);
+    if (firstTag) {
+      const { bg, text: fg } = chipColors(firstTag.hue);
+      span.style.setProperty("--tag-dot-bg", bg);
+      span.style.setProperty("--tag-dot-text", fg);
+    }
   }
 
-  const addBtn = document.createElement("button");
-  addBtn.className = "tag-add-btn";
-  addBtn.textContent = "+ tag";
-  addBtn.addEventListener("click", () => openTagAssign(key));
-  left.appendChild(addBtn);
+  const num = document.createElement("span");
+  num.className = "verse-num-inline";
+  num.textContent = verseNum;
+  span.appendChild(num);
+  span.appendChild(document.createTextNode(text));
 
-  const notesBtn = document.createElement("button");
-  notesBtn.className = "notes-link";
-  notesBtn.textContent = "notes ›";
-  notesBtn.addEventListener("click", () => openVerseDetail(key));
-
-  footer.appendChild(left);
-  footer.appendChild(notesBtn);
-  body.appendChild(footer);
-
-  row.appendChild(num);
-  row.appendChild(body);
-  return row;
+  span.addEventListener("click", () => openVerseDetail(key));
+  return span;
 }
 
 function navigateChapter(delta) {
@@ -517,7 +504,7 @@ function renderTagVerseList() {
     });
 
   if (entries.length === 0) {
-    container.innerHTML = '<div class="empty-msg">No tagged verses yet. Open a verse and use "+ tag" to start.</div>';
+    container.innerHTML = '<div class="empty-msg">No tagged verses yet. Tap any verse while reading to add a tag.</div>';
     return;
   }
 
