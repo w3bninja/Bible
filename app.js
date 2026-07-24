@@ -230,13 +230,11 @@ function selectRange(fromKey, toKey) {
   const a = parseVerseKey(fromKey);
   const b = parseVerseKey(toKey);
   if (a.bookId !== b.bookId || a.chapter !== b.chapter) {
-    selection.clear();
     selection.add(toKey);
     return;
   }
   const lo = Math.min(a.verse, b.verse);
   const hi = Math.max(a.verse, b.verse);
-  selection.clear();
   for (let v = lo; v <= hi; v++) selection.add(verseKey(a.bookId, a.chapter, v));
 }
 
