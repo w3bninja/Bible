@@ -8,7 +8,6 @@ let currentChapter = 1;
 let currentView = "read"; // 'read' | 'verse' | 'tags' | 'search'
 let currentVerseKey = null; // for verse detail view
 let activeTagFilter = null; // null = "All"
-let pickerTestament = "OT";
 let pickerBookId = null; // set when drilled into chapter grid
 let tagAssignKeys = [];
 let tagAssignShowNote = false;
@@ -301,66 +300,77 @@ function navigateChapter(delta) {
 
 el("prevChapterBtn").addEventListener("click", () => navigateChapter(-1));
 el("nextChapterBtn").addEventListener("click", () => navigateChapter(1));
-el("prevChapterBtnBottom").addEventListener("click", () => navigateChapter(-1));
-el("nextChapterBtnBottom").addEventListener("click", () => navigateChapter(1));
 
 // ---------- Book/chapter picker ----------
 
 el("chapterPickerBtn").addEventListener("click", openPicker);
 
+function closePicker() {
+  el("pickerOverlay").classList.add("hidden");
+}
+
 function openPicker() {
-  pickerTestament = booksById.get(currentBookId).testament;
   pickerBookId = null;
-  renderPickerTabs();
+  el("pickerSearchInput").value = "";
+  el("pickerModalTitle").textContent = "Select a book";
+  el("pickerBackBtn").classList.add("hidden");
+  el("pickerSearchInput").classList.remove("hidden");
   renderPickerBookList();
   el("pickerBookList").classList.remove("hidden");
   el("pickerChapterGrid").classList.add("hidden");
   el("pickerOverlay").classList.remove("hidden");
+  el("pickerSearchInput").focus();
 }
-
-function renderPickerTabs() {
-  document.querySelectorAll(".picker-tab").forEach((tab) => {
-    tab.classList.toggle("active", tab.dataset.testament === pickerTestament);
-  });
-}
-
-document.querySelectorAll(".picker-tab").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    pickerTestament = tab.dataset.testament;
-    renderPickerTabs();
-    renderPickerBookList();
-  });
-});
 
 function renderPickerBookList() {
   const list = el("pickerBookList");
   list.innerHTML = "";
-  bible.books
-    .filter((b) => b.testament === pickerTestament)
-    .forEach((book) => {
+  const query = el("pickerSearchInput").value.trim().toLowerCase();
+  const groups = [
+    { label: "Old Testament", books: bible.books.filter((b) => b.testament === "OT") },
+    { label: "New Testament", books: bible.books.filter((b) => b.testament === "NT") },
+  ];
+
+  let anyMatch = false;
+  groups.forEach((group) => {
+    const matches = group.books.filter((b) => !query || b.name.toLowerCase().includes(query));
+    if (matches.length === 0) return;
+    anyMatch = true;
+
+    const heading = document.createElement("div");
+    heading.className = "picker-section-title";
+    heading.textContent = group.label;
+    list.appendChild(heading);
+
+    matches.forEach((book) => {
       const item = document.createElement("button");
       item.className = "picker-book-item";
       item.textContent = book.name;
       item.addEventListener("click", () => renderPickerChapterGrid(book));
       list.appendChild(item);
     });
+  });
+
+  if (!anyMatch) {
+    const empty = document.createElement("div");
+    empty.className = "picker-empty-msg";
+    empty.textContent = "No books match your search.";
+    list.appendChild(empty);
+  }
 }
+
+el("pickerSearchInput").addEventListener("input", renderPickerBookList);
 
 function renderPickerChapterGrid(book) {
   pickerBookId = book.id;
   el("pickerBookList").classList.add("hidden");
+  el("pickerSearchInput").classList.add("hidden");
+  el("pickerModalTitle").textContent = book.name;
+  el("pickerBackBtn").classList.remove("hidden");
+
   const grid = el("pickerChapterGrid");
   grid.innerHTML = "";
   grid.classList.remove("hidden");
-
-  const backBtn = document.createElement("button");
-  backBtn.className = "picker-back";
-  backBtn.textContent = "‹ Books";
-  backBtn.addEventListener("click", () => {
-    grid.classList.add("hidden");
-    el("pickerBookList").classList.remove("hidden");
-  });
-  grid.appendChild(backBtn);
 
   book.chapters.forEach((_, idx) => {
     const chapNum = idx + 1;
@@ -368,22 +378,31 @@ function renderPickerChapterGrid(book) {
     item.className = "picker-chapter-item";
     item.textContent = chapNum;
     item.addEventListener("click", () => {
-      el("pickerOverlay").classList.add("hidden");
+      closePicker();
       selectBook(book.id, chapNum);
     });
     grid.appendChild(item);
   });
 }
 
-document.addEventListener("click", (e) => {
-  if (e.target === el("pickerOverlay")) el("pickerOverlay").classList.add("hidden");
+el("pickerBackBtn").addEventListener("click", () => {
+  pickerBookId = null;
+  el("pickerChapterGrid").classList.add("hidden");
+  el("pickerBookList").classList.remove("hidden");
+  el("pickerSearchInput").classList.remove("hidden");
+  el("pickerModalTitle").textContent = "Select a book";
+  el("pickerBackBtn").classList.add("hidden");
 });
 
-el("pickerCloseBtn").addEventListener("click", () => el("pickerOverlay").classList.add("hidden"));
+document.addEventListener("click", (e) => {
+  if (e.target === el("pickerOverlay")) closePicker();
+});
+
+el("pickerCloseBtn").addEventListener("click", closePicker);
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !el("pickerOverlay").classList.contains("hidden")) {
-    el("pickerOverlay").classList.add("hidden");
+    closePicker();
   }
 });
 

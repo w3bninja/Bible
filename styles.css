@@ -201,6 +201,11 @@ textarea, input {
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 12px;
+  position: sticky;
+  top: 0;
+  background: var(--bg-main);
+  z-index: 4;
+  padding: 6px 0;
 }
 
 .chapter-title-row #prevChapterBtn { justify-self: start; }
@@ -236,15 +241,6 @@ textarea, input {
 
 .caret { color: var(--text-muted); font-size: 13px; }
 
-.chapter-nav { display: flex; gap: 8px; }
-
-.chapter-nav-bottom {
-  justify-content: center;
-  margin-top: 28px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
-}
-
 .btn {
   font-size: 13px;
   border-radius: var(--radius);
@@ -276,6 +272,7 @@ textarea, input {
   font-size: 12.5px;
   color: var(--text-muted);
   margin-top: 4px;
+  text-align: center;
 }
 
 .chapter-flow {
@@ -534,48 +531,55 @@ mark {
 }
 
 /* Book/chapter picker */
-.picker-overlay {
-  position: absolute;
-  inset: 0;
-  background: var(--bg-main);
+.picker-modal {
   display: flex;
   flex-direction: column;
-  z-index: 5;
+  max-width: 420px;
+  max-height: 72vh;
+  padding: 0;
+  overflow: hidden;
 }
 
-.picker-tabs {
+.picker-modal-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-  padding: 16px 28px 0;
+  gap: 8px;
+  padding: 16px 16px 12px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
-.picker-tabs-group {
-  display: flex;
-  gap: 4px;
-}
-
-.picker-tab {
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  padding: 10px 14px;
-  font-size: 14px;
-  color: var(--text-muted);
-  margin-bottom: -1px;
-}
-
-.picker-tab.active {
-  color: var(--accent-border);
-  border-bottom-color: var(--accent-border);
+.picker-modal-title {
+  flex: 1;
+  text-align: center;
+  font-size: 15px;
   font-weight: 600;
+  color: var(--text-heading);
+}
+
+.picker-search-input {
+  margin: 12px 20px 4px;
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-sidebar);
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.picker-section-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 14px 8px 6px;
 }
 
 .picker-book-list {
   overflow-y: auto;
-  padding: 8px 28px 28px;
+  padding: 8px 20px 24px;
 }
 
 .picker-book-item {
@@ -592,8 +596,15 @@ mark {
 
 .picker-book-item:hover { background: rgba(0, 0, 0, 0.03); }
 
+.picker-empty-msg {
+  padding: 24px 8px;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 .picker-chapter-grid {
-  padding: 16px 28px 28px;
+  padding: 16px 20px 24px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
   gap: 8px;
@@ -611,15 +622,6 @@ mark {
 }
 
 .picker-chapter-item:hover { border-color: var(--accent-border); }
-
-.picker-back {
-  margin: 12px 28px 0;
-  align-self: flex-start;
-  font-size: 13px;
-  color: var(--text-muted);
-  background: none;
-  border: none;
-}
 
 /* Modals */
 .modal-overlay {
