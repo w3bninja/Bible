@@ -1,4 +1,4 @@
-const { getStore } = require("@netlify/blobs");
+const { getStore, connectLambda } = require("@netlify/blobs");
 
 const KEY = "tags.json";
 const EMPTY = '{"tags":[],"verseTags":{}}';
@@ -8,6 +8,8 @@ function store() {
 }
 
 exports.handler = async (event) => {
+  connectLambda(event);
+
   if (event.httpMethod === "GET") {
     try {
       const data = await store().get(KEY);
