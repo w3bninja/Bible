@@ -67,7 +67,10 @@
         <div class="verse-detail-ref" id="verseDetailRef"></div>
         <div class="verse-detail-text" id="verseDetailText"></div>
         <div class="verse-detail-tags" id="verseDetailTags"></div>
-        <div class="notes-label">MY NOTES</div>
+        <div class="notes-label-row">
+          <div class="notes-label">MY NOTES</div>
+          <button type="button" id="verseDetailNoteClear" class="note-clear-btn hidden">Delete note</button>
+        </div>
         <textarea id="verseDetailNotes" placeholder="Write what this verse means to you…"></textarea>
       </div>
 
@@ -107,7 +110,10 @@
     <div class="modal tag-assign-modal">
       <div class="modal-ref" id="tagAssignRef"></div>
       <div id="tagAssignList" class="tag-assign-list"></div>
-      <label class="note-label hidden" id="tagAssignNoteLabel">Note
+      <label class="note-label hidden" id="tagAssignNoteLabel">
+        <span class="notes-label-row">Note
+          <button type="button" id="tagAssignNoteClear" class="note-clear-btn hidden">Delete note</button>
+        </span>
         <textarea id="tagAssignNote" rows="3" placeholder="Add a note to the selected verse(s)…"></textarea>
       </label>
       <div class="modal-actions">

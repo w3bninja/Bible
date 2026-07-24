@@ -378,6 +378,7 @@ function openVerseDetail(key) {
   el("verseDetailRef").textContent = refLabel(bookId, chapter, verse);
   el("verseDetailText").textContent = text;
   el("verseDetailNotes").value = tagsData.verseTags[key]?.note || "";
+  el("verseDetailNoteClear").classList.toggle("hidden", !el("verseDetailNotes").value);
 
   renderVerseDetailTags();
   showView("verse");
@@ -416,12 +417,21 @@ function renderVerseDetailTags() {
 
 el("verseDetailNotes").addEventListener("input", () => {
   const key = currentVerseKey;
+  const value = el("verseDetailNotes").value;
   if (!tagsData.verseTags[key]) tagsData.verseTags[key] = { tagIds: [], note: "" };
-  tagsData.verseTags[key].note = el("verseDetailNotes").value;
+  tagsData.verseTags[key].note = value;
   if (!tagsData.verseTags[key].tagIds.length && !tagsData.verseTags[key].note) delete tagsData.verseTags[key];
+  el("verseDetailNoteClear").classList.toggle("hidden", !value);
 
   clearTimeout(notesSaveTimer);
   notesSaveTimer = setTimeout(saveTags, 600);
+});
+
+el("verseDetailNoteClear").addEventListener("click", () => {
+  el("verseDetailNotes").value = "";
+  el("verseDetailNotes").dispatchEvent(new Event("input"));
+  clearTimeout(notesSaveTimer);
+  saveTags();
 });
 
 // ---------- Tag assignment ----------
@@ -466,8 +476,13 @@ function openTagAssign(keys, showNote) {
 
   el("tagAssignNoteLabel").classList.toggle("hidden", !showNote);
   if (showNote) {
-    const note = keys.length === 1 ? tagsData.verseTags[keys[0]]?.note || "" : "";
-    el("tagAssignNote").value = note;
+    const notes = keys.map((k) => tagsData.verseTags[k]?.note || "");
+    const uniform = notes.every((n) => n === notes[0]);
+    el("tagAssignNote").value = uniform ? notes[0] : "";
+    el("tagAssignNote").placeholder = uniform
+      ? "Add a note to the selected verse(s)…"
+      : "Selected verses have different notes — type to overwrite all";
+    el("tagAssignNoteClear").classList.toggle("hidden", !notes.some((n) => n));
   }
 
   renderTagAssignList();
@@ -512,8 +527,17 @@ el("tagAssignNote").addEventListener("input", () => {
     tagsData.verseTags[key].note = note;
     if (!tagsData.verseTags[key].tagIds.length && !tagsData.verseTags[key].note) delete tagsData.verseTags[key];
   });
+  el("tagAssignNoteClear").classList.toggle("hidden", !note);
+  el("tagAssignNote").placeholder = "Add a note to the selected verse(s)…";
   clearTimeout(notesSaveTimer);
   notesSaveTimer = setTimeout(saveTags, 600);
+});
+
+el("tagAssignNoteClear").addEventListener("click", () => {
+  el("tagAssignNote").value = "";
+  el("tagAssignNote").dispatchEvent(new Event("input"));
+  clearTimeout(notesSaveTimer);
+  saveTags();
 });
 
 el("tagAssignDoneBtn").addEventListener("click", closeTagAssign);
