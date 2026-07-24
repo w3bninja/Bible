@@ -9,9 +9,11 @@
         "-ExecutionPolicy",
         "Bypass",
         "-File",
-        "C:\\Users\\e51033\\Claude\\bible-study\\.claude\\server.ps1"
+        "C:\\Users\\e51033\\Claude\\bible-study\\.claude\\server.ps1",
+        "-Port",
+        "5510"
       ],
-      "port": 5500
+      "port": 5510
     }
   ]
 }

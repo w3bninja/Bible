@@ -213,26 +213,17 @@ function buildVerseSpan(key, text, showNum, verseNum) {
 // ---------- Multi-verse selection ----------
 
 function handleVerseClick(e, key) {
-  if (e.shiftKey && lastClickedKey) {
-    selectRange(lastClickedKey, key);
-    lastClickedKey = key;
-    applySelectionClasses();
-    updateSelectionBar();
-    return;
-  }
   if (e.ctrlKey || e.metaKey) {
     if (selection.has(key)) selection.delete(key);
     else selection.add(key);
-    lastClickedKey = key;
-    applySelectionClasses();
-    updateSelectionBar();
-    return;
+  } else if (lastClickedKey) {
+    selectRange(lastClickedKey, key);
+  } else {
+    selection.add(key);
   }
-  if (selection.size > 0) {
-    clearSelection();
-    return;
-  }
-  openVerseDetail(key);
+  lastClickedKey = key;
+  applySelectionClasses();
+  updateSelectionBar();
 }
 
 function selectRange(fromKey, toKey) {
@@ -298,6 +289,8 @@ function navigateChapter(delta) {
 
 el("prevChapterBtn").addEventListener("click", () => navigateChapter(-1));
 el("nextChapterBtn").addEventListener("click", () => navigateChapter(1));
+el("prevChapterBtnBottom").addEventListener("click", () => navigateChapter(-1));
+el("nextChapterBtnBottom").addEventListener("click", () => navigateChapter(1));
 
 // ---------- Book/chapter picker ----------
 
@@ -615,6 +608,10 @@ function renderTagFilterBar() {
   });
 }
 
+function sameTagIds(a, b) {
+  return a.length === b.length && a.every((id) => b.includes(id));
+}
+
 function renderTagVerseList() {
   const container = el("tagVerseList");
   container.innerHTML = "";
@@ -629,24 +626,60 @@ function renderTagVerseList() {
     });
 
   if (entries.length === 0) {
-    container.innerHTML = '<div class="empty-msg">No tagged verses yet. Tap any verse while reading to add a tag.</div>';
+    container.innerHTML = '<div class="empty-msg">No tagged verses yet. Select a verse while reading to add a tag or note.</div>';
     return;
   }
 
+  // Group consecutive verses that share the same note + tags into one card,
+  // so a note written for a passage reads as belonging to the whole passage.
+  const groups = [];
   entries.forEach(({ key, bookId, chapter, verse }) => {
-    const book = booksById.get(bookId);
-    const text = book.chapters[chapter - 1].verses[verse - 1];
     const entry = tagsData.verseTags[key];
+    const last = groups[groups.length - 1];
+    if (
+      last &&
+      last.bookId === bookId &&
+      last.chapter === chapter &&
+      verse === last.endVerse + 1 &&
+      (entry.note || "") === (last.note || "") &&
+      sameTagIds(entry.tagIds || [], last.tagIds || [])
+    ) {
+      last.endVerse = verse;
+      last.keys.push(key);
+    } else {
+      groups.push({
+        bookId,
+        chapter,
+        startVerse: verse,
+        endVerse: verse,
+        note: entry.note || "",
+        tagIds: entry.tagIds || [],
+        keys: [key],
+      });
+    }
+  });
+
+  groups.forEach((group) => {
+    const book = booksById.get(group.bookId);
+    const fullText = group.keys
+      .map((k) => book.chapters[group.chapter - 1].verses[parseVerseKey(k).verse - 1])
+      .join(" ");
+    const excerpt = fullText.length > 160 ? fullText.slice(0, 160) + "…" : fullText;
+    const refText =
+      group.startVerse === group.endVerse
+        ? refLabel(group.bookId, group.chapter, group.startVerse)
+        : `${refLabel(group.bookId, group.chapter, group.startVerse)}–${group.endVerse}`;
 
     const card = document.createElement("div");
     card.className = "verse-card";
     card.innerHTML = `
-      <div class="card-ref">${refLabel(bookId, chapter, verse)}</div>
-      <div class="card-text">${escapeHtml(text.length > 140 ? text.slice(0, 140) + "…" : text)}</div>
+      <div class="card-ref">${refText}</div>
+      <div class="card-text">${escapeHtml(excerpt)}</div>
+      ${group.note ? `<div class="card-note">${escapeHtml(group.note)}</div>` : ""}
       <div class="card-tags"></div>
     `;
     const tagsRow = card.querySelector(".card-tags");
-    entry.tagIds.forEach((tagId) => {
+    group.tagIds.forEach((tagId) => {
       const tag = tagsData.tags.find((t) => t.id === tagId);
       if (!tag) return;
       const { bg, text: fg } = chipColors(tag.hue);
@@ -658,7 +691,17 @@ function renderTagVerseList() {
       tagsRow.appendChild(chip);
     });
 
-    card.addEventListener("click", () => openVerseDetail(key));
+    card.addEventListener("click", () => {
+      if (group.keys.length === 1) {
+        openVerseDetail(group.keys[0]);
+        return;
+      }
+      selection.clear();
+      group.keys.forEach((k) => selection.add(k));
+      lastClickedKey = group.keys[group.keys.length - 1];
+      selectBook(group.bookId, group.chapter);
+      updateSelectionBar();
+    });
     container.appendChild(card);
   });
 }

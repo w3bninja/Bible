@@ -228,6 +228,13 @@ textarea, input {
 
 .chapter-nav { display: flex; gap: 8px; }
 
+.chapter-nav-bottom {
+  justify-content: center;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
 .btn {
   font-size: 13px;
   border-radius: var(--radius);
@@ -457,6 +464,16 @@ textarea, input {
   line-height: 1.5;
   color: var(--text-primary);
   margin-bottom: 6px;
+}
+
+.card-note {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  background: var(--bg-alt, rgba(0, 0, 0, 0.035));
+  border-left: 2px solid var(--accent-border, var(--border));
+  padding: 6px 10px;
+  border-radius: 0 6px 6px 0;
+  margin-bottom: 8px;
 }
 
 .card-tags { display: flex; gap: 6px; flex-wrap: wrap; }
