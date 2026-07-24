@@ -188,6 +188,7 @@ function buildVerseSpan(key, text, showNum, verseNum) {
 
   const entry = tagsData.verseTags[key];
   const tagIds = (entry && entry.tagIds) || [];
+  if (entry && entry.note) span.classList.add("has-note");
   if (tagIds.length) {
     span.classList.add("tagged");
     const firstTag = tagsData.tags.find((t) => t.id === tagIds[0]);
@@ -259,6 +260,19 @@ function updateSelectionBar() {
   }
   bar.classList.remove("hidden");
   el("selectionCount").textContent = `${selection.size} verse${selection.size > 1 ? "s" : ""} selected`;
+}
+
+function goToVerseInChapter(keys) {
+  selection.clear();
+  keys.forEach((k) => selection.add(k));
+  lastClickedKey = keys[keys.length - 1];
+  const { bookId, chapter } = parseVerseKey(keys[0]);
+  selectBook(bookId, chapter);
+  updateSelectionBar();
+  requestAnimationFrame(() => {
+    const span = document.querySelector(`.verse-inline[data-key="${keys[0]}"]`);
+    if (span) span.scrollIntoView({ block: "center", behavior: "smooth" });
+  });
 }
 
 el("clearSelectionBtn").addEventListener("click", clearSelection);
@@ -365,6 +379,14 @@ document.addEventListener("click", (e) => {
   if (e.target === el("pickerOverlay")) el("pickerOverlay").classList.add("hidden");
 });
 
+el("pickerCloseBtn").addEventListener("click", () => el("pickerOverlay").classList.add("hidden"));
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !el("pickerOverlay").classList.contains("hidden")) {
+    el("pickerOverlay").classList.add("hidden");
+  }
+});
+
 // ---------- Verse detail view ----------
 
 function openVerseDetail(key) {
@@ -431,6 +453,8 @@ el("verseDetailNoteClear").addEventListener("click", () => {
   clearTimeout(notesSaveTimer);
   saveTags();
 });
+
+el("verseDetailRef").addEventListener("click", () => goToVerseInChapter([currentVerseKey]));
 
 // ---------- Tag assignment ----------
 
@@ -718,11 +742,7 @@ function renderTagVerseList() {
         openVerseDetail(group.keys[0]);
         return;
       }
-      selection.clear();
-      group.keys.forEach((k) => selection.add(k));
-      lastClickedKey = group.keys[group.keys.length - 1];
-      selectBook(group.bookId, group.chapter);
-      updateSelectionBar();
+      goToVerseInChapter(group.keys);
     });
     container.appendChild(card);
   });

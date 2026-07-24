@@ -197,11 +197,21 @@ textarea, input {
 .chapter-header { margin-bottom: 20px; }
 
 .chapter-title-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
+}
+
+.chapter-title-row #prevChapterBtn { justify-self: start; }
+.chapter-title-row #nextChapterBtn { justify-self: end; }
+
+@media (max-width: 480px) {
+  .chapter-title-row {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 8px;
+  }
 }
 
 .chapter-title-btn {
@@ -310,6 +320,11 @@ textarea, input {
 
 .verse-inline:hover { background: rgba(0, 0, 0, 0.045); }
 
+.verse-inline.has-note { background: oklch(0.96 0.04 95); }
+.verse-inline.tagged { background: var(--tag-dot-bg, oklch(0.96 0.04 95)); }
+.verse-inline.has-note:hover,
+.verse-inline.tagged:hover { filter: brightness(0.97); }
+
 .verse-inline.selected {
   background: var(--accent-bg);
   outline: 1px solid var(--accent-border);
@@ -356,6 +371,15 @@ textarea, input {
   font-weight: 600;
   color: var(--text-secondary);
   margin-bottom: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.verse-detail-ref:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
 }
 
 .verse-detail-text {
@@ -521,9 +545,16 @@ mark {
 
 .picker-tabs {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 4px;
   padding: 16px 28px 0;
   border-bottom: 1px solid var(--border);
+}
+
+.picker-tabs-group {
+  display: flex;
+  gap: 4px;
 }
 
 .picker-tab {

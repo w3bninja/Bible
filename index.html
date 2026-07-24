@@ -45,14 +45,12 @@
       <div id="readView" class="view-content">
         <div class="chapter-header">
           <div class="chapter-title-row">
+            <button id="prevChapterBtn" class="btn btn-outline btn-small">‹ Previous</button>
             <button id="chapterPickerBtn" class="chapter-title-btn">
               <h1 id="chapterHeading">Genesis 1</h1>
               <span class="caret">▾</span>
             </button>
-            <div class="chapter-nav">
-              <button id="prevChapterBtn" class="btn btn-outline btn-small">‹ Previous</button>
-              <button id="nextChapterBtn" class="btn btn-outline btn-small">Next ›</button>
-            </div>
+            <button id="nextChapterBtn" class="btn btn-outline btn-small">Next ›</button>
           </div>
           <div class="version-label">King James Version</div>
         </div>
@@ -64,7 +62,7 @@
       </div>
 
       <div id="verseView" class="view-content hidden">
-        <div class="verse-detail-ref" id="verseDetailRef"></div>
+        <button type="button" class="verse-detail-ref" id="verseDetailRef" title="View in chapter"></button>
         <div class="verse-detail-text" id="verseDetailText"></div>
         <div class="verse-detail-tags" id="verseDetailTags"></div>
         <div class="notes-label-row">
@@ -89,8 +87,13 @@
 
       <div id="pickerOverlay" class="picker-overlay hidden">
         <div class="picker-tabs">
-          <button class="picker-tab active" data-testament="OT">Old Testament</button>
-          <button class="picker-tab" data-testament="NT">New Testament</button>
+          <div class="picker-tabs-group">
+            <button class="picker-tab active" data-testament="OT">Old Testament</button>
+            <button class="picker-tab" data-testament="NT">New Testament</button>
+          </div>
+          <button id="pickerCloseBtn" class="icon-btn-outline" title="Close">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </button>
         </div>
         <div id="pickerBookList" class="picker-book-list"></div>
         <div id="pickerChapterGrid" class="picker-chapter-grid hidden"></div>
