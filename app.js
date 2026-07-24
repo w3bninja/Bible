@@ -10,7 +10,11 @@ let currentVerseKey = null; // for verse detail view
 let activeTagFilter = null; // null = "All"
 let pickerTestament = "OT";
 let pickerBookId = null; // set when drilled into chapter grid
-let tagAssignVerseKey = null;
+let tagAssignKeys = [];
+let tagAssignShowNote = false;
+
+let selection = new Set();
+let lastClickedKey = null;
 
 let saveTimer = null;
 let notesSaveTimer = null;
@@ -179,6 +183,8 @@ function renderVerses() {
 function buildVerseSpan(key, text, showNum, verseNum) {
   const span = document.createElement("span");
   span.className = "verse-inline";
+  span.dataset.key = key;
+  if (selection.has(key)) span.classList.add("selected");
 
   const entry = tagsData.verseTags[key];
   const tagIds = (entry && entry.tagIds) || [];
@@ -200,9 +206,76 @@ function buildVerseSpan(key, text, showNum, verseNum) {
   }
   span.appendChild(document.createTextNode(text));
 
-  span.addEventListener("click", () => openVerseDetail(key));
+  span.addEventListener("click", (e) => handleVerseClick(e, key));
   return span;
 }
+
+// ---------- Multi-verse selection ----------
+
+function handleVerseClick(e, key) {
+  if (e.shiftKey && lastClickedKey) {
+    selectRange(lastClickedKey, key);
+    lastClickedKey = key;
+    applySelectionClasses();
+    updateSelectionBar();
+    return;
+  }
+  if (e.ctrlKey || e.metaKey) {
+    if (selection.has(key)) selection.delete(key);
+    else selection.add(key);
+    lastClickedKey = key;
+    applySelectionClasses();
+    updateSelectionBar();
+    return;
+  }
+  if (selection.size > 0) {
+    clearSelection();
+    return;
+  }
+  openVerseDetail(key);
+}
+
+function selectRange(fromKey, toKey) {
+  const a = parseVerseKey(fromKey);
+  const b = parseVerseKey(toKey);
+  if (a.bookId !== b.bookId || a.chapter !== b.chapter) {
+    selection.clear();
+    selection.add(toKey);
+    return;
+  }
+  const lo = Math.min(a.verse, b.verse);
+  const hi = Math.max(a.verse, b.verse);
+  selection.clear();
+  for (let v = lo; v <= hi; v++) selection.add(verseKey(a.bookId, a.chapter, v));
+}
+
+function applySelectionClasses() {
+  document.querySelectorAll(".verse-inline").forEach((span) => {
+    span.classList.toggle("selected", selection.has(span.dataset.key));
+  });
+}
+
+function clearSelection() {
+  selection.clear();
+  lastClickedKey = null;
+  applySelectionClasses();
+  updateSelectionBar();
+}
+
+function updateSelectionBar() {
+  const bar = el("selectionBar");
+  if (selection.size === 0) {
+    bar.classList.add("hidden");
+    return;
+  }
+  bar.classList.remove("hidden");
+  el("selectionCount").textContent = `${selection.size} verse${selection.size > 1 ? "s" : ""} selected`;
+}
+
+el("clearSelectionBtn").addEventListener("click", clearSelection);
+el("tagSelectionBtn").addEventListener("click", () => {
+  openTagAssign([...selection], true);
+});
 
 function navigateChapter(delta) {
   const book = booksById.get(currentBookId);
@@ -344,7 +417,7 @@ function renderVerseDetailTags() {
   const addBtn = document.createElement("button");
   addBtn.className = "tag-add-btn";
   addBtn.textContent = "+ add tag";
-  addBtn.addEventListener("click", () => openTagAssign(currentVerseKey, true));
+  addBtn.addEventListener("click", () => openTagAssign([currentVerseKey], false));
   container.appendChild(addBtn);
 }
 
@@ -372,13 +445,40 @@ function toggleVerseTag(key, tagId) {
   scheduleSave();
 }
 
-function openTagAssign(key, fromDetail) {
-  tagAssignVerseKey = key;
-  const { bookId, chapter, verse } = parseVerseKey(key);
-  el("tagAssignRef").textContent = refLabel(bookId, chapter, verse);
+function toggleTagForKeys(keys, tagId) {
+  const allHaveIt = keys.every((k) => (tagsData.verseTags[k]?.tagIds || []).includes(tagId));
+  keys.forEach((key) => {
+    if (!tagsData.verseTags[key]) tagsData.verseTags[key] = { tagIds: [], note: "" };
+    const entry = tagsData.verseTags[key];
+    if (allHaveIt) {
+      entry.tagIds = entry.tagIds.filter((id) => id !== tagId);
+    } else if (!entry.tagIds.includes(tagId)) {
+      entry.tagIds.push(tagId);
+    }
+    if (!entry.tagIds.length && !entry.note) delete tagsData.verseTags[key];
+  });
+  scheduleSave();
+}
+
+function openTagAssign(keys, showNote) {
+  tagAssignKeys = keys;
+  tagAssignShowNote = showNote;
+
+  if (keys.length === 1) {
+    const { bookId, chapter, verse } = parseVerseKey(keys[0]);
+    el("tagAssignRef").textContent = refLabel(bookId, chapter, verse);
+  } else {
+    el("tagAssignRef").textContent = `${keys.length} verses selected`;
+  }
+
+  el("tagAssignNoteLabel").classList.toggle("hidden", !showNote);
+  if (showNote) {
+    const note = keys.length === 1 ? tagsData.verseTags[keys[0]]?.note || "" : "";
+    el("tagAssignNote").value = note;
+  }
+
   renderTagAssignList();
   el("tagAssignOverlay").classList.remove("hidden");
-  el("tagAssignOverlay").dataset.fromDetail = fromDetail ? "1" : "";
 }
 
 function renderTagAssignList() {
@@ -390,11 +490,8 @@ function renderTagAssignList() {
     return;
   }
 
-  const entry = tagsData.verseTags[tagAssignVerseKey];
-  const activeIds = entry ? entry.tagIds : [];
-
   tagsData.tags.forEach((tag) => {
-    const selected = activeIds.includes(tag.id);
+    const selected = tagAssignKeys.some((k) => (tagsData.verseTags[k]?.tagIds || []).includes(tag.id));
     const btn = document.createElement("button");
     btn.className = "tag-toggle-pill";
     btn.textContent = tag.name;
@@ -405,7 +502,7 @@ function renderTagAssignList() {
       btn.style.borderColor = "transparent";
     }
     btn.addEventListener("click", () => {
-      toggleVerseTag(tagAssignVerseKey, tag.id);
+      toggleTagForKeys(tagAssignKeys, tag.id);
       renderTagAssignList();
       renderVerses();
       if (currentView === "verse") renderVerseDetailTags();
@@ -415,13 +512,31 @@ function renderTagAssignList() {
   });
 }
 
-el("tagAssignDoneBtn").addEventListener("click", () => {
-  el("tagAssignOverlay").classList.add("hidden");
+el("tagAssignNote").addEventListener("input", () => {
+  const note = el("tagAssignNote").value;
+  tagAssignKeys.forEach((key) => {
+    if (!tagsData.verseTags[key]) tagsData.verseTags[key] = { tagIds: [], note: "" };
+    tagsData.verseTags[key].note = note;
+    if (!tagsData.verseTags[key].tagIds.length && !tagsData.verseTags[key].note) delete tagsData.verseTags[key];
+  });
+  clearTimeout(notesSaveTimer);
+  notesSaveTimer = setTimeout(saveTags, 600);
 });
 
+el("tagAssignDoneBtn").addEventListener("click", closeTagAssign);
+
 el("tagAssignOverlay").addEventListener("click", (e) => {
-  if (e.target === el("tagAssignOverlay")) el("tagAssignOverlay").classList.add("hidden");
+  if (e.target === el("tagAssignOverlay")) closeTagAssign();
 });
+
+function closeTagAssign() {
+  el("tagAssignOverlay").classList.add("hidden");
+  if (tagAssignShowNote) {
+    clearSelection();
+    renderVerses();
+    if (currentView === "tags") renderTagsView();
+  }
+}
 
 // ---------- New tag creation ----------
 
@@ -459,7 +574,7 @@ el("newTagForm").addEventListener("submit", (e) => {
 
   const tag = { id: crypto.randomUUID(), name, hue: selectedHue };
   tagsData.tags.push(tag);
-  toggleVerseTag(tagAssignVerseKey, tag.id);
+  toggleTagForKeys(tagAssignKeys, tag.id);
 
   el("newTagOverlay").classList.add("hidden");
   renderTagAssignList();

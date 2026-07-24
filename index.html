@@ -91,10 +91,21 @@
     </main>
   </div>
 
+  <div id="selectionBar" class="selection-bar hidden">
+    <span id="selectionCount"></span>
+    <div class="selection-actions">
+      <button id="tagSelectionBtn" type="button" class="btn btn-accent-solid btn-small">Tag &amp; note selected…</button>
+      <button id="clearSelectionBtn" type="button" class="btn btn-outline btn-small">Clear</button>
+    </div>
+  </div>
+
   <div id="tagAssignOverlay" class="modal-overlay hidden">
     <div class="modal tag-assign-modal">
       <div class="modal-ref" id="tagAssignRef"></div>
       <div id="tagAssignList" class="tag-assign-list"></div>
+      <label class="note-label hidden" id="tagAssignNoteLabel">Note
+        <textarea id="tagAssignNote" rows="3" placeholder="Add a note to the selected verse(s)…"></textarea>
+      </label>
       <div class="modal-actions">
         <button id="tagAssignAddBtn" type="button" class="btn btn-accent-solid">+ Add</button>
         <button id="tagAssignDoneBtn" type="button" class="btn btn-outline">Done</button>
