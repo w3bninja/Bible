@@ -4,7 +4,7 @@ const KEY = "tags.json";
 const EMPTY = '{"tags":[],"verseTags":{}}';
 
 function store() {
-  return getStore({ name: "bible-study", consistency: "strong" });
+  return getStore("bible-study");
 }
 
 exports.handler = async (event) => {
