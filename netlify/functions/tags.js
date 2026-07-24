@@ -1,31 +1,21 @@
-const GITHUB_API = "https://api.github.com";
-const OWNER = "w3bninja";
-const REPO = "Bible";
-const BRANCH = "master";
-const FILE_PATH = "data/tags.json";
+const { getStore } = require("@netlify/blobs");
 
-function ghHeaders() {
-  return {
-    Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-    "User-Agent": "bible-study-tags-function",
-  };
-}
+const KEY = "tags.json";
+const EMPTY = '{"tags":[],"verseTags":{}}';
 
-async function getFile() {
-  const res = await fetch(
-    `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}?ref=${BRANCH}`,
-    { headers: ghHeaders() }
-  );
-  if (!res.ok) throw new Error(`GitHub read failed: ${res.status} ${await res.text()}`);
-  return res.json();
+function store() {
+  return getStore({ name: "bible-study", consistency: "strong" });
 }
 
 exports.handler = async (event) => {
   if (event.httpMethod === "GET") {
     try {
-      const file = await getFile();
-      const content = Buffer.from(file.content, "base64").toString("utf-8");
-      return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: content };
+      const data = await store().get(KEY);
+      return {
+        statusCode: 200,
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: data || EMPTY,
+      };
     } catch (err) {
       return { statusCode: 502, body: String(err.message || err) };
     }
@@ -40,25 +30,10 @@ exports.handler = async (event) => {
     }
 
     try {
-      const current = await getFile();
-      const putRes = await fetch(
-        `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}`,
-        {
-          method: "PUT",
-          headers: { ...ghHeaders(), "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message: "Update tags.json via Bible Study app",
-            content: Buffer.from(JSON.stringify(parsed)).toString("base64"),
-            sha: current.sha,
-            branch: BRANCH,
-          }),
-        }
-      );
-      if (!putRes.ok) throw new Error(`GitHub write failed: ${putRes.status} ${await putRes.text()}`);
-
+      await store().set(KEY, JSON.stringify(parsed));
       return {
         statusCode: 200,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({ ok: true }),
       };
     } catch (err) {
