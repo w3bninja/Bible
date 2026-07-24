@@ -18,6 +18,7 @@
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   --radius: 8px;
   --radius-pill: 100px;
+  --topbar-h: 57px;
 }
 
 * { box-sizing: border-box; }
@@ -126,7 +127,12 @@ textarea, input {
   align-items: center;
   justify-content: space-between;
   padding: 16px 28px;
+  height: var(--topbar-h);
   flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  background: var(--bg-main);
+  z-index: 8;
 }
 
 .top-bar-left {
@@ -194,6 +200,8 @@ textarea, input {
 }
 
 /* Read view */
+#readView { padding-left: 48px; padding-right: 48px; }
+
 .chapter-header { margin-bottom: 20px; }
 
 .chapter-title-row {
@@ -201,7 +209,7 @@ textarea, input {
   justify-content: center;
   align-items: center;
   position: sticky;
-  top: 0;
+  top: var(--topbar-h);
   background: var(--bg-main);
   z-index: 4;
   padding: 6px 0;
@@ -211,7 +219,7 @@ textarea, input {
   position: sticky;
   top: 50vh;
   height: 0;
-  margin: 0 -28px;
+  margin: 0 -48px;
 }
 
 .nav-arrow-btn {
@@ -238,8 +246,8 @@ textarea, input {
   background: rgba(0, 0, 0, 0.03);
 }
 
-.nav-arrow-prev { left: -4px; }
-.nav-arrow-next { right: -4px; }
+.nav-arrow-prev { left: 6px; }
+.nav-arrow-next { right: 6px; }
 
 .chapter-title-btn {
   background: none;
