@@ -197,10 +197,9 @@ textarea, input {
 .chapter-header { margin-bottom: 20px; }
 
 .chapter-title-row {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
+  justify-content: center;
   align-items: center;
-  gap: 12px;
   position: sticky;
   top: 0;
   background: var(--bg-main);
@@ -208,16 +207,39 @@ textarea, input {
   padding: 6px 0;
 }
 
-.chapter-title-row #prevChapterBtn { justify-self: start; }
-.chapter-title-row #nextChapterBtn { justify-self: end; }
-
-@media (max-width: 480px) {
-  .chapter-title-row {
-    grid-template-columns: 1fr;
-    justify-items: center;
-    gap: 8px;
-  }
+.chapter-nav-float {
+  position: sticky;
+  top: 50vh;
+  height: 0;
+  margin: 0 -28px;
 }
+
+.nav-arrow-btn {
+  position: absolute;
+  top: -18px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-main);
+  color: var(--text-nav);
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  z-index: 6;
+}
+
+.nav-arrow-btn:hover {
+  border-color: var(--accent-border);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.nav-arrow-prev { left: -4px; }
+.nav-arrow-next { right: -4px; }
 
 .chapter-title-btn {
   background: none;
