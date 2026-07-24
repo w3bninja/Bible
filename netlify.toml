@@ -1,6 +1,7 @@
 [build]
   command = "npm install"
   publish = "."
+  ignore = "test \"$CACHED_COMMIT_REF\" = \"$COMMIT_REF\" && exit 1; git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':!data/tags.json'"
 
 [functions]
   directory = "netlify/functions"
