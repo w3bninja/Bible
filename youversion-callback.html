@@ -9,10 +9,13 @@
   <script>
     (async () => {
       const params = new URLSearchParams(window.location.search);
-      const code = params.get("code");
-      const state = params.get("state");
-      const error = params.get("error");
-      const errorDescription = params.get("error_description");
+      // Some providers return the auth response in the URL fragment instead
+      // of the query string — check both so a real code isn't missed.
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const code = params.get("code") || hashParams.get("code");
+      const state = params.get("state") || hashParams.get("state");
+      const error = params.get("error") || hashParams.get("error");
+      const errorDescription = params.get("error_description") || hashParams.get("error_description");
       const expectedState = sessionStorage.getItem("yv_oauth_state");
       const verifier = sessionStorage.getItem("yv_pkce_verifier");
       sessionStorage.removeItem("yv_oauth_state");
@@ -25,7 +28,7 @@
       }
 
       if (error) return fail("provider_error", errorDescription || error);
-      if (!code) return fail("missing_code");
+      if (!code) return fail("missing_code", window.location.search + window.location.hash);
       if (!verifier) return fail("missing_verifier_lost_session");
       if (state !== expectedState) return fail("state_mismatch");
 
