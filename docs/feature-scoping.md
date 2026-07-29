@@ -52,15 +52,18 @@ Long-press/tap a word to open a bottom sheet: Strong's lexicon card, translation
 - **Text-mismatch decision (resolved 2026-07-29):** the kaiserlik source text is not always word-for-word identical to this app's existing verse text — 4,492 of 31,102 verses (14.4%) have a differing word count (e.g. Genesis 1:9 in kaiserlik's source omits "and it was so." — a known KJV textual-variant issue, not a bug in either source). Decision: **Phase 2 will replace the app's displayed text with kaiserlik's version outright**, guaranteeing every displayed word aligns with its Strong's tag, accepting minor wording differences on ~14% of verses rather than attempting fragile word-alignment between two slightly different texts.
 - Skipped for now (not needed until Phase 2/3): book→author/group table for "Paul's Letters"-style filters.
 
-### Phase 2 — Rendering & interaction
-- Rework `buildVerseSpan()` (`app.js:182-211`) to wrap individual words in spans carrying `data-strongs`, without breaking verse readability/spacing.
-- Long-press detection for touch; needs a distinct trigger for desktop (no native long-press) — open UX decision.
-- Must not conflict with existing verse-level click/range-selection.
+### Phase 2 — Rendering & interaction (DONE, built 2026-07-29)
+- **Design pivot from the original plan:** rather than long-press-on-any-word (which conflicts with the existing verse-click-to-select interaction — plain click on verse text already means "select for tagging"), the feature is triggered from the existing single-verse selection: selecting exactly one verse reveals a **"Study words…"** button in the floating selection bar (`app.js` `updateSelectionBar()`), which opens a right-side panel. This was the user's suggestion mid-build and is a better fit — it reuses the selection mechanism from feature 1 instead of adding a parallel interaction mode, and required no changes to existing verse-click/range-selection behavior at all.
+- New `#wordStudyPanel` side panel (`index.html`, styled in `styles.css`): word chips for every token in the selected verse (tappable if it carries a Strong's number, disabled/greyed if not — e.g. "the", "and"), each chip opening a detail view.
+- `data/strongs-tokens.json`, `data/strongs-lexicon.json`, `data/strongs-concordance.json` are lazy-loaded on first use (`loadStrongsData()` in `app.js`) rather than at app init, so normal reading-view load time is unaffected by the ~26MB of Strong's data.
+- Detail view shows the full lexicon card (lemma, transliteration, Strong's #, part of speech, definition, translation-breakdown pills, live occurrence count from the concordance) plus **Tag all occurrences…** (feeds directly into the existing `openTagAssign()` bulk-tag mechanism from feature 1 — same modal, same code path) and **Copy study note** (clipboard, pre-formatted markdown template).
+- Verified live end-to-end against the running app: selected Genesis 1:1 → chips rendered exactly matching the tokenized words → tapped "beginning" → correct H7225 lexicon card rendered → "Tag all occurrences…" opened the tag-assign modal pre-loaded with all 51 verses containing H7225 (confirmed via the existing concordance index) → closed without polluting real tag data.
+- Bug found and fixed along the way: ~95% of lexicon entries (11,514 of 12,040) contained literal undecoded HTML entities in their definitions (e.g. `&#8212` instead of an em dash) — fixed in `scripts/import-strongs.js` with an entity-decoding pass, re-ran the import, verified clean output.
+- Known limitation carried over from feature 1: this uses the app's plain-text substring search infrastructure nowhere here, so nothing new to note there — but the panel currently shows the raw kaiserlik word text (not the app's original wording) for chip labels, per the earlier text-replacement decision; the reading view itself is untouched.
 
-### Phase 3 — Bottom sheet UI
-- New slide-up sheet component (existing `.modal-overlay` pattern in `styles.css:655-728` is centered-modal only, needs a new variant).
-- 4 sections: lexicon card, translation-breakdown chart (open decision: hand-rolled SVG vs. adding the app's first JS dependency), concordance list (needs frequency-threshold handling for common words like "the"/"and" which could have 1000s of hits), action buttons.
-- "Tag all occurrences" reuses the bulk-tag mechanism from feature 1.
+### Phase 3 — Bottom sheet upgrade (not started)
+- Current side panel already covers 3 of the original spec's 4 sections (lexicon card, concordance count + "tag all", copy-note action). Missing: the **translation-breakdown pie/donut chart** (currently a flat list of translation pills — functionally equivalent data, just not charted) and the **full scrollable concordance list with book/testament/author filters** (currently just a count + bulk-tag button, not a browsable list).
+- Open decision: keep the side-panel form factor (arguably a better fit for desktop than a mobile-style bottom sheet) and layer in the chart + concordance list there, rather than building a separate bottom sheet component as originally scoped.
 
 **Dependencies:** none remaining — Phase 0 resolved 2026-07-29.
 
@@ -124,7 +127,7 @@ Feature 1's multi-select + bulk-tag-apply mechanism is a direct prerequisite for
 |---|---|---|
 | 1. Search & Select Batch Tagging | **M** | ~~Nothing~~ **Done, shipped 2026-07-29** |
 | 3A. Strong's rule tagging | **S** (after Phase 1) | Tap-to-Study Phase 1 (data layer build) |
-| 2. Tap-to-Study Word Study Sheet | **M** (Phases 2-3 remain) | ~~Data spike~~, ~~Phase 1~~ done — text-alignment decision needed before Phase 2 |
+| 2. Tap-to-Study Word Study Sheet | **S** (Phase 3 polish remains) | ~~Data spike~~, ~~Phase 1~~, ~~Phase 2~~ done — shipped 2026-07-29 |
 | 3B1. Topic smart folders (Nave's/TSK) | **L** | Own data spike (not started) |
 | 3B2. Named-entity auto-tags | **XL** | Undefined — dataset existence unknown |
 | 3C. AI semantic tagging | **XL** | Infra/provider decision, not data |

@@ -108,8 +108,24 @@
   <div id="selectionBar" class="selection-bar hidden">
     <span id="selectionCount"></span>
     <div class="selection-actions">
+      <button id="studyWordsBtn" type="button" class="btn btn-outline btn-small hidden">Study words…</button>
       <button id="tagSelectionBtn" type="button" class="btn btn-accent-solid btn-small">Tag &amp; note selected…</button>
       <button id="clearSelectionBtn" type="button" class="btn btn-outline btn-small">Clear</button>
+    </div>
+  </div>
+
+  <div id="wordStudyPanel" class="word-study-panel hidden">
+    <div class="word-study-header">
+      <div class="word-study-ref" id="wordStudyRef"></div>
+      <button id="wordStudyCloseBtn" class="icon-btn-outline" title="Close">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div id="wordStudyLoading" class="word-study-loading hidden">Loading word data…</div>
+    <div id="wordStudyChips" class="word-study-chips"></div>
+    <div id="wordStudyDetail" class="word-study-detail hidden">
+      <button id="wordStudyBackBtn" class="word-study-back-btn">‹ All words</button>
+      <div class="word-study-card" id="wordStudyCard"></div>
     </div>
   </div>
 

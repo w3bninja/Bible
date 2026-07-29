@@ -75,6 +75,20 @@ function tokenizeVerseText(en) {
   return tokens;
 }
 
+// Source lexicon text contains literal HTML entities, often missing the
+// trailing semicolon (e.g. "&#8212" instead of "&#8212;" for an em dash).
+function decodeEntities(str) {
+  if (!str) return str;
+  return str
+    .replace(/&#(\d+);?/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&mdash;?/g, "—")
+    .replace(/&ndash;?/g, "–")
+    .replace(/&quot;?/g, '"')
+    .replace(/&lt;?/g, "<")
+    .replace(/&gt;?/g, ">")
+    .replace(/&amp;?/g, "&");
+}
+
 function parseOccurrences(str) {
   // Source string repeats itself verbatim, e.g. "love(86x), charity(28x), love(86x), charity(28x)"
   if (!str) return {};
@@ -157,10 +171,10 @@ for (const [num, entry] of Object.entries(rawLexicon)) {
   lexicon[num] = {
     lemma: entry.Gk_word || entry.Hb_word || "",
     translit: entry.transliteration || "",
-    def: entry.strongs_def || "",
+    def: decodeEntities(entry.strongs_def || ""),
     pos: entry.part_of_speech || "",
-    root: entry.root_word || "",
-    outline: entry.outline_usage || "",
+    root: decodeEntities(entry.root_word || ""),
+    outline: decodeEntities(entry.outline_usage || ""),
     translations: parseOccurrences(entry.occurrences),
   };
 }

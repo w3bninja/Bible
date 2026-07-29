@@ -261,10 +261,13 @@ function updateSelectionBar() {
   const bar = el("selectionBar");
   if (selection.size === 0) {
     bar.classList.add("hidden");
+    closeWordStudyPanel();
     return;
   }
   bar.classList.remove("hidden");
   el("selectionCount").textContent = `${selection.size} verse${selection.size > 1 ? "s" : ""} selected`;
+  el("studyWordsBtn").classList.toggle("hidden", selection.size !== 1);
+  if (selection.size !== 1) closeWordStudyPanel();
 }
 
 function goToVerseInChapter(keys) {
@@ -283,6 +286,9 @@ function goToVerseInChapter(keys) {
 el("clearSelectionBtn").addEventListener("click", clearSelection);
 el("tagSelectionBtn").addEventListener("click", () => {
   openTagAssign([...selection], true);
+});
+el("studyWordsBtn").addEventListener("click", () => {
+  if (selection.size === 1) openWordStudyPanel([...selection][0]);
 });
 
 function navigateChapter(delta) {
@@ -980,6 +986,148 @@ el("searchSelectAllBtn").addEventListener("click", () => {
   updateSelectionBar();
   renderSearchResults();
 });
+
+// ---------- Word study panel ----------
+
+let strongsTokens = null;
+let strongsLexicon = null;
+let strongsConcordance = null;
+let strongsDataPromise = null;
+
+let wordStudyVerseKey = null;
+
+function loadStrongsData() {
+  if (!strongsDataPromise) {
+    strongsDataPromise = Promise.all([
+      fetchJSON("data/strongs-tokens.json"),
+      fetchJSON("data/strongs-lexicon.json"),
+      fetchJSON("data/strongs-concordance.json"),
+    ]).then(([tokens, lexicon, concordance]) => {
+      strongsTokens = tokens;
+      strongsLexicon = lexicon;
+      strongsConcordance = concordance;
+    });
+  }
+  return strongsDataPromise;
+}
+
+async function openWordStudyPanel(key) {
+  wordStudyVerseKey = key;
+  const { bookId, chapter, verse } = parseVerseKey(key);
+  el("wordStudyRef").textContent = refLabel(bookId, chapter, verse);
+  el("wordStudyPanel").classList.remove("hidden");
+  el("wordStudyDetail").classList.add("hidden");
+  el("wordStudyChips").classList.add("hidden");
+  el("wordStudyLoading").classList.remove("hidden");
+
+  await loadStrongsData();
+  if (wordStudyVerseKey !== key) return; // panel closed or moved on while loading
+
+  el("wordStudyLoading").classList.add("hidden");
+  el("wordStudyChips").classList.remove("hidden");
+  renderWordStudyChips(key);
+}
+
+function closeWordStudyPanel() {
+  wordStudyVerseKey = null;
+  el("wordStudyPanel").classList.add("hidden");
+}
+
+el("wordStudyCloseBtn").addEventListener("click", closeWordStudyPanel);
+
+function renderWordStudyChips(key) {
+  const container = el("wordStudyChips");
+  container.innerHTML = "";
+  const tokens = strongsTokens[key];
+
+  if (!tokens) {
+    container.innerHTML = '<div class="empty-msg">No word study data for this verse.</div>';
+    return;
+  }
+
+  tokens.forEach((tok) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "word-chip";
+    chip.textContent = tok.t;
+    if (!tok.s || !tok.s.length) {
+      chip.disabled = true;
+    } else {
+      chip.addEventListener("click", () => openWordDetail(tok.s));
+    }
+    container.appendChild(chip);
+  });
+}
+
+el("wordStudyBackBtn").addEventListener("click", () => {
+  el("wordStudyDetail").classList.add("hidden");
+  el("wordStudyChips").classList.remove("hidden");
+});
+
+function openWordDetail(strongsNums) {
+  el("wordStudyChips").classList.add("hidden");
+  el("wordStudyDetail").classList.remove("hidden");
+  renderWordStudyCard(strongsNums[0], strongsNums);
+}
+
+function renderWordStudyCard(num, allNums) {
+  const entry = strongsLexicon[num];
+  const card = el("wordStudyCard");
+
+  if (!entry) {
+    card.innerHTML = `<div class="empty-msg">No lexicon entry for ${escapeHtml(num)}.</div>`;
+    return;
+  }
+
+  const translationPills = Object.entries(entry.translations || {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([word, count]) => `<span class="wsc-translation-pill">${escapeHtml(word)} · ${count}×</span>`)
+    .join("");
+
+  const occurrences = (strongsConcordance[num] || []).length;
+
+  card.innerHTML = `
+    <div class="wsc-lemma-row">
+      <span class="wsc-lemma">${escapeHtml(entry.lemma)}</span>
+      <span class="wsc-translit">${escapeHtml(entry.translit)}</span>
+      <span class="wsc-number">${escapeHtml(num)}</span>
+    </div>
+    <div class="wsc-pos">${escapeHtml(entry.pos || "")}</div>
+    <div class="wsc-def">${escapeHtml(entry.def)}</div>
+    ${
+      translationPills
+        ? `<div><div class="wsc-section-label">Translated as</div><div class="wsc-translations">${translationPills}</div></div>`
+        : ""
+    }
+    <div class="wsc-section-label">${occurrences} occurrence${occurrences === 1 ? "" : "s"} in this text</div>
+    <div class="wsc-actions">
+      <button type="button" class="btn btn-accent-solid btn-small" id="wscTagAllBtn">Tag all occurrences…</button>
+      <button type="button" class="btn btn-outline btn-small" id="wscCopyNoteBtn">Copy study note</button>
+    </div>
+    ${allNums.length > 1 ? `<div class="wsc-section-label">This word also carries ${allNums.length - 1} other tag(s) — showing ${escapeHtml(num)}.</div>` : ""}
+  `;
+
+  el("wscTagAllBtn").addEventListener("click", () => {
+    const keys = strongsConcordance[num] || [];
+    if (!keys.length) return;
+    openTagAssign(keys, false);
+  });
+
+  el("wscCopyNoteBtn").addEventListener("click", async () => {
+    const primaryTranslation = Object.entries(entry.translations || {}).sort((a, b) => b[1] - a[1])[0];
+    const glossWord = primaryTranslation ? primaryTranslation[0] : entry.translit;
+    const note = `Word Study: ${glossWord} (${num} - ${entry.translit}) | Def: ${entry.def}`;
+    try {
+      await navigator.clipboard.writeText(note);
+      const btn = el("wscCopyNoteBtn");
+      const original = btn.textContent;
+      btn.textContent = "Copied!";
+      setTimeout(() => (btn.textContent = original), 1200);
+    } catch (err) {
+      console.error(err);
+    }
+  });
+}
 
 // ---------- Persistence ----------
 
