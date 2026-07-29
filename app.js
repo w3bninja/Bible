@@ -1029,7 +1029,7 @@ async function connectYouVersion() {
     response_type: "code",
     client_id: YOUVERSION_APP_KEY,
     redirect_uri: redirectUri,
-    scope: "openid profile email",
+    scope: "openid profile email highlights notes bookmarks",
     state,
     nonce: randomPkceString(16),
     code_challenge: challenge,
