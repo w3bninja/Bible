@@ -99,13 +99,17 @@ e.g. "auto-tag any verse containing G26 with #AgapeLove."
 
 **Dependencies:** none — fully shipped.
 
-### B2. Named entity recognition (people/places, e.g. tapping "David")
-**Effort: XL**, least defined
+### B2. Named-entity smart tags (people, e.g. "David") — DONE, built 2026-07-29
 
-- Real NER requires either a pre-built open dataset of entity→verse mappings, or running an actual NER model — this app's architecture (static JS, thin Netlify Function backend) doesn't cheaply support model inference.
-- Unknown whether a suitable open dataset exists — has not been investigated yet.
+- A pre-built open dataset existed after all: **`BibleData-PersonVerse.csv` + `BibleData-Person.csv`**, same repo as 3B1 (`BradyStephenson/bible-data`), same CC BY 4.0 license already verified. No NER model needed.
+- **Real scope change from the original spec, confirmed with the user before building:** the spec described tapping a name *directly in the reading text* (e.g. tap "David" mid-verse). The dataset only records "David appears in Ruth 4:17," not *which word* in that verse's text is his name — a verse can refer to someone via a pronoun or title instead of the literal name, so reliably highlighting the right word in-text isn't supported by this data (same limitation as 3B1's topics). Built instead as a **person smart tag** — the identical mechanism as 3A/3B1, selected via search/autocomplete rather than tapped in text. Places (`BibleData-Place`/`BibleData-PlaceVerse`, same repo) are available for a future pass but weren't in scope for this round.
+- Format is simpler to parse than Nave's: each `PersonVerse` row is already one clean `"GEN 1:1"` reference per verse — just book-abbreviation normalization + validation against `data/bible.json`, no range/list grammar.
+- The real work was **disambiguation**: ~3,000 distinct `person_id`s frequently share a first name (multiple Jameses, Marys, etc.), so [`scripts/import-persons.js`](../scripts/import-persons.js) builds a unique, human-readable label per person — plain name if unique, else `"Name (short clause from unique_attribute)"` (with citation suffixes like `"(MAT 4:21)"` stripped to avoid doubled-up parens), falling back to `"Name #sequence"` for the handful of people with no usable disambiguating text. `data/persons.json` is keyed directly by these final labels, same shape as `topics.json`.
+- Results: 2,992 people with at least one resolvable verse, 29,413 verse links, 121 invalid verse references dropped (0.27%, same validation-against-bible.json pattern as 3B1), 0 unresolved references or person IDs.
+- Generalized the smart-tag `rule` field again to accept `{person: "David"}` alongside `{strongs}`/`{topic}` — same live matching, same one-rule-per-tag overwrite confirmation in the word-study panel. New tag creation gained a second optional "Auto-tag by person" autocomplete field alongside the topic one.
+- Verified live: created a person tag for "David" → 2,992-entry datalist populated correctly → first matching verse (Ruth 4:17, Obed named as David's grandfather — correct) picked up the tag immediately.
 
-**Dependencies:** unresolved data-source question, more open-ended than any other item here.
+**Dependencies:** none — fully shipped.
 
 ### C. Dynamic AI semantic tagging
 Free-text prompt (e.g. "tag verses about anxiety") → semantic verse matches.
@@ -135,7 +139,7 @@ Feature 1's multi-select + bulk-tag-apply mechanism is a direct prerequisite for
 | 3A. Strong's rule tagging | **Done** | Shipped 2026-07-29 |
 | 2. Tap-to-Study Word Study Sheet | **Done** | All phases shipped 2026-07-29 |
 | 3B1. Topic smart folders (Nave's) | **Done** | Shipped 2026-07-29 |
-| 3B2. Named-entity auto-tags | **XL** | Undefined — dataset existence unknown |
+| 3B2. Named-entity smart tags (people) | **Done** | Shipped 2026-07-29 |
 | 3C. AI semantic tagging | **XL** | Infra/provider decision, not data |
 
 ## Suggested sequencing

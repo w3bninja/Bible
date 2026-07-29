@@ -630,27 +630,32 @@ function closeTagAssign() {
 let selectedHue = HUE_PRESETS[0];
 let pendingSmartTagRule = null; // set to a Strong's number when the "+ new smart tag" flow opens this modal
 
+function populateDatalist(datalistId, names) {
+  const datalist = el(datalistId);
+  if (datalist.childElementCount) return;
+  names
+    .slice()
+    .sort()
+    .forEach((name) => {
+      const opt = document.createElement("option");
+      opt.value = name;
+      datalist.appendChild(opt);
+    });
+}
+
 function openNewTagModal() {
   el("newTagName").value = "";
   el("newTagTopic").value = "";
+  el("newTagPerson").value = "";
   selectedHue = HUE_PRESETS[Math.floor(Math.random() * HUE_PRESETS.length)];
   renderHueSwatches();
 
-  const showTopicField = !pendingSmartTagRule;
-  el("newTagTopicRow").classList.toggle("hidden", !showTopicField);
-  if (showTopicField) {
-    ensureTopicsLoaded().then(() => {
-      const datalist = el("topicsDatalist");
-      if (!datalist.childElementCount) {
-        Object.keys(topicsData)
-          .sort()
-          .forEach((name) => {
-            const opt = document.createElement("option");
-            opt.value = name;
-            datalist.appendChild(opt);
-          });
-      }
-    });
+  const showFields = !pendingSmartTagRule;
+  el("newTagTopicRow").classList.toggle("hidden", !showFields);
+  el("newTagPersonRow").classList.toggle("hidden", !showFields);
+  if (showFields) {
+    ensureTopicsLoaded().then(() => populateDatalist("topicsDatalist", Object.keys(topicsData)));
+    ensurePersonsLoaded().then(() => populateDatalist("personsDatalist", Object.keys(personsData)));
   }
 
   el("newTagOverlay").classList.remove("hidden");
@@ -694,6 +699,10 @@ el("newTagForm").addEventListener("submit", (e) => {
   const matchedTopic = !pendingSmartTagRule && topicInput
     ? Object.keys(topicsData || {}).find((t) => t.toLowerCase() === topicInput.toLowerCase())
     : null;
+  const personInput = el("newTagPerson").value.trim();
+  const matchedPerson = !pendingSmartTagRule && !matchedTopic && personInput
+    ? Object.keys(personsData || {}).find((p) => p.toLowerCase() === personInput.toLowerCase())
+    : null;
 
   if (pendingSmartTagRule) {
     tag.rule = { strongs: pendingSmartTagRule };
@@ -706,8 +715,8 @@ el("newTagForm").addEventListener("submit", (e) => {
       if (currentView === "verse") renderVerseDetailTags();
       if (wordStudyConcNum) renderWordStudyCard(wordStudyConcNum, [wordStudyConcNum]);
     });
-  } else if (matchedTopic) {
-    tag.rule = { topic: matchedTopic };
+  } else if (matchedTopic || matchedPerson) {
+    tag.rule = matchedTopic ? { topic: matchedTopic } : { person: matchedPerson };
     invalidateSmartTagCache();
     scheduleSave();
     renderVerses();
@@ -1117,14 +1126,16 @@ function loadStrongsData() {
 
 // ---------- Smart (rule-based) tags ----------
 //
-// A tag with a `rule: {strongs: "G26"}` or `rule: {topic: "AARON"}` field
-// auto-applies to every matching verse, computed live from the concordance
-// or topics index rather than written into verseTags — so it never mutates
-// saved verse data.
+// A tag with a `rule: {strongs: "G26"}`, `rule: {topic: "AARON"}`, or
+// `rule: {person: "David"}` field auto-applies to every matching verse,
+// computed live from the relevant index rather than written into
+// verseTags — so it never mutates saved verse data.
 
 let concordanceOnlyPromise = null;
 let topicsData = null;
 let topicsPromise = null;
+let personsData = null;
+let personsPromise = null;
 let smartTagSetsCache = null; // Map<tagId, Set<verseKey>>
 
 function ensureConcordanceLoaded() {
@@ -1147,12 +1158,22 @@ function ensureTopicsLoaded() {
   return topicsPromise;
 }
 
+function ensurePersonsLoaded() {
+  if (personsData) return Promise.resolve();
+  if (!personsPromise) {
+    personsPromise = fetchJSON("data/persons.json").then((p) => {
+      personsData = p;
+    });
+  }
+  return personsPromise;
+}
+
 function invalidateSmartTagCache() {
   smartTagSetsCache = null;
 }
 
 function getSmartTagSets() {
-  if (!strongsConcordance && !topicsData) return null;
+  if (!strongsConcordance && !topicsData && !personsData) return null;
   if (!smartTagSetsCache) {
     smartTagSetsCache = new Map();
     tagsData.tags.forEach((tag) => {
@@ -1160,6 +1181,8 @@ function getSmartTagSets() {
         smartTagSetsCache.set(tag.id, new Set(strongsConcordance[tag.rule.strongs] || []));
       } else if (tag.rule && tag.rule.topic && topicsData) {
         smartTagSetsCache.set(tag.id, new Set(topicsData[tag.rule.topic] || []));
+      } else if (tag.rule && tag.rule.person && personsData) {
+        smartTagSetsCache.set(tag.id, new Set(personsData[tag.rule.person] || []));
       }
     });
   }
@@ -1183,13 +1206,14 @@ function effectiveTagIdsForKey(key) {
 }
 
 function anySmartTagsDefined() {
-  return tagsData.tags.some((t) => t.rule && (t.rule.strongs || t.rule.topic));
+  return tagsData.tags.some((t) => t.rule && (t.rule.strongs || t.rule.topic || t.rule.person));
 }
 
 function loadAnyDefinedSmartTagSources() {
   const jobs = [];
   if (tagsData.tags.some((t) => t.rule && t.rule.strongs)) jobs.push(ensureConcordanceLoaded());
   if (tagsData.tags.some((t) => t.rule && t.rule.topic)) jobs.push(ensureTopicsLoaded());
+  if (tagsData.tags.some((t) => t.rule && t.rule.person)) jobs.push(ensurePersonsLoaded());
   return Promise.all(jobs);
 }
 
@@ -1416,8 +1440,9 @@ function renderSmartTagPills(num) {
       btn.style.borderColor = "transparent";
     }
     btn.addEventListener("click", () => {
-      if (!active && tag.rule && tag.rule.topic) {
-        const ok = confirm(`"${tag.name}" is already an auto-tag for the topic "${tag.rule.topic}". Switch it to auto-tag by this word instead?`);
+      if (!active && tag.rule && (tag.rule.topic || tag.rule.person)) {
+        const existing = tag.rule.topic ? `topic "${tag.rule.topic}"` : `person "${tag.rule.person}"`;
+        const ok = confirm(`"${tag.name}" is already an auto-tag for the ${existing}. Switch it to auto-tag by this word instead?`);
         if (!ok) return;
       }
       tag.rule = active ? undefined : { strongs: num };
