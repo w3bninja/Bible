@@ -15,6 +15,11 @@ let tagAssignShowNote = false;
 let selection = new Set();
 let lastClickedKey = null;
 
+let lastSearchQuery = "";
+let lastSearchResults = []; // [{bookId, chapter, verse, text}]
+let searchTestamentFilter = null; // null | 'OT' | 'NT'
+let searchBookFilter = null; // null | bookId
+
 let saveTimer = null;
 let notesSaveTimer = null;
 
@@ -249,6 +254,7 @@ function clearSelection() {
   lastClickedKey = null;
   applySelectionClasses();
   updateSelectionBar();
+  if (currentView === "search" && lastSearchResults.length) renderSearchResults();
 }
 
 function updateSelectionBar() {
@@ -773,7 +779,12 @@ el("searchToggleBtn").addEventListener("click", () => {
   el("searchInput").value = "";
   el("searchHeading").classList.add("hidden");
   el("searchEmptyHint").classList.remove("hidden");
+  el("searchToolbar").classList.add("hidden");
   el("searchResults").innerHTML = "";
+  lastSearchResults = [];
+  searchTestamentFilter = null;
+  searchBookFilter = null;
+  clearSelection();
   showView("search");
   el("searchInput").focus();
 });
@@ -816,6 +827,8 @@ function escapeRegExp(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+const SEARCH_RESULT_CAP = 1000;
+
 function runTextSearch(query) {
   const q = query.toLowerCase();
   const results = [];
@@ -827,36 +840,146 @@ function runTextSearch(query) {
       for (let v = 0; v < chapterVerses.length; v++) {
         if (chapterVerses[v].toLowerCase().includes(q)) {
           results.push({ bookId: book.id, chapter: c + 1, verse: v + 1, text: chapterVerses[v] });
-          if (results.length >= 200) break outer;
+          if (results.length >= SEARCH_RESULT_CAP) break outer;
         }
       }
     }
   }
 
+  lastSearchQuery = query;
+  lastSearchResults = results;
+  searchTestamentFilter = null;
+  searchBookFilter = null;
+  clearSelection();
+
   el("searchEmptyHint").classList.add("hidden");
   el("searchHeading").classList.remove("hidden");
-  el("searchHeading").textContent = `Search results for "${query}" (${results.length}${results.length >= 200 ? "+" : ""})`;
+
+  renderSearchResults();
+  showView("search");
+}
+
+function filteredSearchResults() {
+  return lastSearchResults.filter((r) => {
+    if (searchTestamentFilter && booksById.get(r.bookId)?.testament !== searchTestamentFilter) return false;
+    if (searchBookFilter && r.bookId !== searchBookFilter) return false;
+    return true;
+  });
+}
+
+function renderSearchFilterBar(filtered) {
+  const bar = el("searchFilterBar");
+  bar.innerHTML = "";
+
+  const makePill = (label, active, onClick) => {
+    const btn = document.createElement("button");
+    btn.className = "filter-pill" + (active ? " active" : "");
+    btn.textContent = label;
+    btn.addEventListener("click", onClick);
+    bar.appendChild(btn);
+  };
+
+  makePill("All", searchTestamentFilter === null, () => {
+    searchTestamentFilter = null;
+    searchBookFilter = null;
+    renderSearchResults();
+  });
+  makePill("Old Testament", searchTestamentFilter === "OT", () => {
+    searchTestamentFilter = searchTestamentFilter === "OT" ? null : "OT";
+    searchBookFilter = null;
+    renderSearchResults();
+  });
+  makePill("New Testament", searchTestamentFilter === "NT", () => {
+    searchTestamentFilter = searchTestamentFilter === "NT" ? null : "NT";
+    searchBookFilter = null;
+    renderSearchResults();
+  });
+
+  const booksInScope = (searchTestamentFilter
+    ? lastSearchResults.filter((r) => booksById.get(r.bookId)?.testament === searchTestamentFilter)
+    : lastSearchResults
+  ).reduce((set, r) => set.add(r.bookId), new Set());
+
+  if (booksInScope.size > 1) {
+    [...booksInScope]
+      .sort((a, b) => (booksById.get(a)?.order ?? 0) - (booksById.get(b)?.order ?? 0))
+      .forEach((bookId) => {
+        const book = booksById.get(bookId);
+        if (!book) return;
+        makePill(book.name, searchBookFilter === bookId, () => {
+          searchBookFilter = searchBookFilter === bookId ? null : bookId;
+          renderSearchResults();
+        });
+      });
+  }
+}
+
+function renderSearchResults() {
+  const filtered = filteredSearchResults();
+
+  const capSuffix = lastSearchResults.length >= SEARCH_RESULT_CAP ? "+" : "";
+  el("searchHeading").textContent =
+    `Search results for "${lastSearchQuery}" (${filtered.length}${filtered.length !== lastSearchResults.length ? ` of ${lastSearchResults.length}${capSuffix}` : capSuffix})`;
+
+  el("searchToolbar").classList.toggle("hidden", lastSearchResults.length === 0);
+  renderSearchFilterBar(filtered);
+
+  const allSelected = filtered.length > 0 && filtered.every((r) => selection.has(verseKey(r.bookId, r.chapter, r.verse)));
+  const selectAllBtn = el("searchSelectAllBtn");
+  selectAllBtn.textContent = allSelected ? "Deselect all" : "Select all";
+  selectAllBtn.disabled = filtered.length === 0;
 
   const container = el("searchResults");
   container.innerHTML = "";
-  if (results.length === 0) {
-    container.innerHTML = '<div class="empty-msg">No matches found.</div>';
-  } else {
-    results.forEach(({ bookId, chapter, verse, text }) => {
-      const card = document.createElement("div");
-      card.className = "verse-card";
-      const highlighted = escapeHtml(text).replace(new RegExp(escapeRegExp(escapeHtml(query)), "ig"), (m) => `<mark>${m}</mark>`);
-      card.innerHTML = `
-        <div class="card-ref">${refLabel(bookId, chapter, verse)}</div>
-        <div class="card-text">${highlighted}</div>
-      `;
-      card.addEventListener("click", () => openVerseDetail(verseKey(bookId, chapter, verse)));
-      container.appendChild(card);
-    });
+  if (filtered.length === 0) {
+    container.innerHTML = `<div class="empty-msg">${lastSearchResults.length === 0 ? "No matches found." : "No matches in this filter."}</div>`;
+    return;
   }
 
-  showView("search");
+  filtered.forEach(({ bookId, chapter, verse, text }) => {
+    const key = verseKey(bookId, chapter, verse);
+    const card = document.createElement("div");
+    card.className = "verse-card card-checkbox-row";
+    const highlighted = escapeHtml(text).replace(new RegExp(escapeRegExp(escapeHtml(lastSearchQuery)), "ig"), (m) => `<mark>${m}</mark>`);
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "card-checkbox";
+    checkbox.checked = selection.has(key);
+    checkbox.addEventListener("click", (e) => e.stopPropagation());
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selection.add(key);
+      else selection.delete(key);
+      lastClickedKey = key;
+      updateSelectionBar();
+      renderSearchResults();
+    });
+    card.appendChild(checkbox);
+
+    const body = document.createElement("div");
+    body.className = "card-body";
+    body.innerHTML = `
+      <div class="card-ref">${refLabel(bookId, chapter, verse)}</div>
+      <div class="card-text">${highlighted}</div>
+    `;
+    body.addEventListener("click", () => openVerseDetail(key));
+    card.appendChild(body);
+
+    container.appendChild(card);
+  });
 }
+
+el("searchSelectAllBtn").addEventListener("click", () => {
+  const filtered = filteredSearchResults();
+  const allSelected = filtered.length > 0 && filtered.every((r) => selection.has(verseKey(r.bookId, r.chapter, r.verse)));
+  filtered.forEach((r) => {
+    const key = verseKey(r.bookId, r.chapter, r.verse);
+    if (allSelected) selection.delete(key);
+    else selection.add(key);
+  });
+  updateSelectionBar();
+  renderSearchResults();
+});
 
 // ---------- Persistence ----------
 
