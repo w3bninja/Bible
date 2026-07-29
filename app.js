@@ -1164,6 +1164,23 @@ function closeWordStudyPanel() {
 
 el("wordStudyCloseBtn").addEventListener("click", closeWordStudyPanel);
 
+// Not every English word has its own Strong's number — Hebrew/Greek don't map
+// word-for-word onto English, so helper words (e.g. "Let" in "Let...bring
+// forth[H1876]") often go untagged even though they're part of a tagged
+// phrase. Rather than a dead end, link untagged words to whichever tagged
+// word is nearest in the same verse (by word distance, ties favor the word
+// that follows), and say plainly that it's a proximity link, not a claim
+// that the words share an exact grammatical relationship.
+function nearestTaggedIndex(tokens, index) {
+  for (let d = 1; d < tokens.length; d++) {
+    const after = index + d;
+    const before = index - d;
+    if (after < tokens.length && tokens[after].s && tokens[after].s.length) return after;
+    if (before >= 0 && tokens[before].s && tokens[before].s.length) return before;
+  }
+  return -1;
+}
+
 function renderWordStudyChips(key) {
   const container = el("wordStudyChips");
   container.innerHTML = "";
@@ -1174,18 +1191,40 @@ function renderWordStudyChips(key) {
     return;
   }
 
-  tokens.forEach((tok) => {
+  tokens.forEach((tok, i) => {
     const chip = document.createElement("button");
     chip.type = "button";
-    chip.className = "word-chip";
     chip.textContent = tok.t;
-    if (!tok.s || !tok.s.length) {
-      chip.disabled = true;
-    } else {
+    if (tok.s && tok.s.length) {
+      chip.className = "word-chip";
       chip.addEventListener("click", () => openWordDetail(tok.s));
+    } else {
+      chip.className = "word-chip word-chip-untagged";
+      const nearestIdx = nearestTaggedIndex(tokens, i);
+      chip.addEventListener("click", () => openUntaggedWordDetail(tok.t, nearestIdx >= 0 ? tokens[nearestIdx] : null));
     }
     container.appendChild(chip);
   });
+}
+
+function openUntaggedWordDetail(word, linkedToken) {
+  el("wordStudyChips").classList.add("hidden");
+  el("wordStudyDetail").classList.remove("hidden");
+  const card = el("wordStudyCard");
+
+  const note = linkedToken
+    ? `<div class="wsc-def">This word doesn't carry its own Strong's number in the underlying text — English and the original Hebrew/Greek don't always map word-for-word. The nearest tagged word in this verse is <strong>${escapeHtml(linkedToken.t)}</strong> (${escapeHtml(linkedToken.s.join(", "))}).</div>`
+    : `<div class="wsc-def">This word doesn't carry its own Strong's number, and no other word in this verse does either.</div>`;
+
+  card.innerHTML = `
+    <div class="wsc-lemma-row"><span class="wsc-lemma">${escapeHtml(word)}</span></div>
+    ${note}
+    ${linkedToken ? `<button type="button" class="btn btn-outline btn-small" id="wscJumpToLinkedBtn">View "${escapeHtml(linkedToken.t)}" →</button>` : ""}
+  `;
+
+  if (linkedToken) {
+    el("wscJumpToLinkedBtn").addEventListener("click", () => openWordDetail(linkedToken.s));
+  }
 }
 
 el("wordStudyBackBtn").addEventListener("click", () => {
@@ -1246,6 +1285,11 @@ function renderWordStudyCard(num, allNums) {
   const keys = strongsConcordance[num] || [];
   const occurrences = keys.length;
 
+  // A handful of lexicon entries have a near-empty "def" field (e.g. just
+  // "."), so fall back to the outline_usage field, which is usually intact.
+  const hasDef = entry.def && entry.def.trim().replace(/\.$/, "").length > 0;
+  const defText = hasDef ? entry.def : entry.outline;
+
   card.innerHTML = `
     <div class="wsc-lemma-row">
       <span class="wsc-lemma">${escapeHtml(entry.lemma)}</span>
@@ -1253,7 +1297,7 @@ function renderWordStudyCard(num, allNums) {
       <span class="wsc-number">${escapeHtml(num)}</span>
     </div>
     <div class="wsc-pos">${escapeHtml(entry.pos || "")}</div>
-    <div class="wsc-def">${escapeHtml(entry.def)}</div>
+    <div class="wsc-def">${escapeHtml(defText || "No definition available.")}</div>
     ${
       Object.keys(entry.translations || {}).length
         ? `<div><div class="wsc-section-label">Translated as</div>${buildTranslationDonut(entry.translations)}</div>`

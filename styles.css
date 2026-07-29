@@ -897,15 +897,14 @@ mark {
   color: var(--text-primary);
 }
 
-.word-chip.tagged-word {
-  border-color: var(--accent-border);
-  background: var(--accent-bg);
-  color: var(--accent-text);
+.word-chip-untagged {
+  border-style: dashed;
+  color: var(--text-muted);
 }
 
-.word-chip:disabled {
-  color: var(--text-muted);
-  cursor: default;
+.word-chip-untagged:hover {
+  color: var(--text-secondary);
+  border-color: var(--text-muted);
 }
 
 .word-study-detail { display: flex; flex-direction: column; gap: 12px; }
