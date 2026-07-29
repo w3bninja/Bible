@@ -84,6 +84,12 @@ async function init() {
     } else {
       selectBook("genesis", 1);
     }
+
+    if (new URLSearchParams(window.location.search).get("yvConnect")) {
+      handleYouVersionRedirectParam();
+      renderTagsView();
+      showView("tags");
+    }
   } catch (err) {
     console.error(err);
     el("readView").innerHTML = '<div class="empty-msg">Failed to load data — is the server running?</div>';
@@ -981,6 +987,103 @@ function isSmartTag(tag) {
 function renderTagsView() {
   renderTagFilterBar();
   renderTagVerseList();
+  refreshYouVersionStatus();
+}
+
+// ---------- YouVersion (Bible.com) connect ----------
+//
+// PKCE OAuth flow — no client secret exists anywhere, this app's App Key is
+// a public client_id. The token exchange still happens server-side (a
+// Netlify Function) and tokens are stored server-side via Netlify Blobs,
+// never in the browser, consistent with how this app already stores tags.
+
+const YOUVERSION_APP_KEY = "Z8ou4eKH1jLzXHa8QOvlNnCgLQmXRtY2tyIfBg31o8omy0IO";
+const YOUVERSION_AUTHORIZE_ENDPOINT = "https://api.youversion.com/auth/authorize";
+
+function base64UrlEncode(buffer) {
+  let binary = "";
+  new Uint8Array(buffer).forEach((b) => (binary += String.fromCharCode(b)));
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function randomPkceString(len) {
+  const arr = new Uint8Array(len);
+  crypto.getRandomValues(arr);
+  return base64UrlEncode(arr.buffer);
+}
+
+async function pkceChallenge(verifier) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  return base64UrlEncode(digest);
+}
+
+async function connectYouVersion() {
+  const verifier = randomPkceString(64);
+  const challenge = await pkceChallenge(verifier);
+  const state = randomPkceString(24);
+  sessionStorage.setItem("yv_pkce_verifier", verifier);
+  sessionStorage.setItem("yv_oauth_state", state);
+
+  const redirectUri = window.location.origin + "/youversion-callback.html";
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: YOUVERSION_APP_KEY,
+    redirect_uri: redirectUri,
+    scope: "openid profile email",
+    state,
+    nonce: randomPkceString(16),
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+  });
+  window.location.href = `${YOUVERSION_AUTHORIZE_ENDPOINT}?${params}`;
+}
+
+async function refreshYouVersionStatus() {
+  const statusText = el("youversionStatusText");
+  const connectBtn = el("youversionConnectBtn");
+  const disconnectBtn = el("youversionDisconnectBtn");
+  statusText.textContent = "Checking YouVersion connection…";
+  connectBtn.classList.add("hidden");
+  disconnectBtn.classList.add("hidden");
+
+  try {
+    const res = await fetch("/api/youversion/status");
+    const data = await res.json();
+    if (data.connected) {
+      statusText.textContent = "YouVersion account connected.";
+      disconnectBtn.classList.remove("hidden");
+    } else {
+      statusText.textContent = "YouVersion account not connected.";
+      connectBtn.classList.remove("hidden");
+    }
+  } catch (err) {
+    console.error(err);
+    statusText.textContent = "Couldn't check YouVersion connection status.";
+    connectBtn.classList.remove("hidden");
+  }
+}
+
+el("youversionConnectBtn").addEventListener("click", connectYouVersion);
+
+el("youversionDisconnectBtn").addEventListener("click", async () => {
+  try {
+    await fetch("/api/youversion/status", { method: "DELETE" });
+  } catch (err) {
+    console.error(err);
+  }
+  refreshYouVersionStatus();
+});
+
+function handleYouVersionRedirectParam() {
+  const params = new URLSearchParams(window.location.search);
+  const yvConnect = params.get("yvConnect");
+  if (!yvConnect) return;
+  window.history.replaceState({}, "", window.location.pathname);
+  if (yvConnect === "success") {
+    alert("YouVersion account connected.");
+  } else {
+    alert("Couldn't connect your YouVersion account. Please try again.");
+  }
 }
 
 function ruleDescription(rule) {

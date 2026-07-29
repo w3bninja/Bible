@@ -10,3 +10,21 @@
   to = "/.netlify/functions/tags"
   status = 200
   force = true
+
+[[redirects]]
+  from = "/api/youversion/token"
+  to = "/.netlify/functions/youversion-token"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/youversion/status"
+  to = "/.netlify/functions/youversion-status"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/youversion/debug-moments"
+  to = "/.netlify/functions/youversion-debug-moments"
+  status = 200
+  force = true

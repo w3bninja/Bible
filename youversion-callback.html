@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Connecting YouVersion…</title>
+</head>
+<body>
+  <p>Connecting your YouVersion account…</p>
+  <script>
+    (async () => {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
+      const state = params.get("state");
+      const error = params.get("error");
+      const expectedState = sessionStorage.getItem("yv_oauth_state");
+      const verifier = sessionStorage.getItem("yv_pkce_verifier");
+      sessionStorage.removeItem("yv_oauth_state");
+      sessionStorage.removeItem("yv_pkce_verifier");
+
+      if (error || !code || !verifier || state !== expectedState) {
+        window.location.href = "/?yvConnect=error";
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/youversion/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            code,
+            code_verifier: verifier,
+            redirect_uri: window.location.origin + "/youversion-callback.html",
+          }),
+        });
+        window.location.href = res.ok ? "/?yvConnect=success" : "/?yvConnect=error";
+      } catch {
+        window.location.href = "/?yvConnect=error";
+      }
+    })();
+  </script>
+</body>
+</html>

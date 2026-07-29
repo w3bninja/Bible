@@ -590,6 +590,15 @@ textarea, input {
 
 .tags-page-header .page-heading { margin-bottom: 0; }
 
+.youversion-panel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+}
+
 .smart-tags-list {
   display: flex;
   flex-direction: column;
