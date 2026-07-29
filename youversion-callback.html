@@ -12,15 +12,22 @@
       const code = params.get("code");
       const state = params.get("state");
       const error = params.get("error");
+      const errorDescription = params.get("error_description");
       const expectedState = sessionStorage.getItem("yv_oauth_state");
       const verifier = sessionStorage.getItem("yv_pkce_verifier");
       sessionStorage.removeItem("yv_oauth_state");
       sessionStorage.removeItem("yv_pkce_verifier");
 
-      if (error || !code || !verifier || state !== expectedState) {
-        window.location.href = "/?yvConnect=error";
-        return;
+      function fail(reason, detail) {
+        const q = new URLSearchParams({ yvConnect: "error", reason });
+        if (detail) q.set("detail", detail);
+        window.location.href = "/?" + q.toString();
       }
+
+      if (error) return fail("provider_error", errorDescription || error);
+      if (!code) return fail("missing_code");
+      if (!verifier) return fail("missing_verifier_lost_session");
+      if (state !== expectedState) return fail("state_mismatch");
 
       try {
         const res = await fetch("/api/youversion/token", {
@@ -32,9 +39,14 @@
             redirect_uri: window.location.origin + "/youversion-callback.html",
           }),
         });
-        window.location.href = res.ok ? "/?yvConnect=success" : "/?yvConnect=error";
-      } catch {
-        window.location.href = "/?yvConnect=error";
+        if (res.ok) {
+          window.location.href = "/?yvConnect=success";
+        } else {
+          const text = await res.text().catch(() => "");
+          fail("token_exchange_failed", text.slice(0, 300));
+        }
+      } catch (err) {
+        fail("fetch_error", String(err && err.message));
       }
     })();
   </script>

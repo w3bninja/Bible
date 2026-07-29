@@ -1078,11 +1078,13 @@ function handleYouVersionRedirectParam() {
   const params = new URLSearchParams(window.location.search);
   const yvConnect = params.get("yvConnect");
   if (!yvConnect) return;
+  const reason = params.get("reason");
+  const detail = params.get("detail");
   window.history.replaceState({}, "", window.location.pathname);
   if (yvConnect === "success") {
     alert("YouVersion account connected.");
   } else {
-    alert("Couldn't connect your YouVersion account. Please try again.");
+    alert(`Couldn't connect your YouVersion account.\nReason: ${reason || "unknown"}${detail ? `\nDetail: ${detail}` : ""}`);
   }
 }
 
