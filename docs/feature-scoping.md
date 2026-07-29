@@ -77,16 +77,17 @@ Long-press/tap a word to open a bottom sheet: Strong's lexicon card, translation
 
 Three sub-features, decreasing in readiness:
 
-### A. Strong's-number rule tagging
+### A. Strong's-number rule tagging (DONE, built 2026-07-29)
 e.g. "auto-tag any verse containing G26 with #AgapeLove."
 
-**Effort: S** (once Tap-to-Study Phase 1 data layer exists — data source itself is now resolved)
+- Tags gained an optional `rule: {strongs: "G26"}` field. A verse's *effective* tags = its manually-assigned `verseTags` merged live with every rule-tag whose Strong's number appears in that verse (`effectiveTagIdsForKey()` in `app.js`) — computed at render time from the concordance index, never written into `verseTags`, so it can't corrupt or overwrite the user's manual tagging data.
+- Rule creation happens right where it's contextually useful: the word study side panel (feature 2) gained an "Auto-tag verses with this word" pill row — toggle an existing tag on/off as a rule for the currently-viewed Strong's number, or hit "+ new" to create a fresh rule-tag on the spot.
+- All three tag-consuming surfaces were updated to merge smart-tag matches with manual tags: the reading view's tag dot (`buildVerseSpan`), the verse-detail chip list (smart-only tags render as a visually distinct dashed "auto" chip, since removing them doesn't make sense — you'd edit the rule, not the verse), and the Tags browse view (filter-pill counts and the verse list itself, which is capped at 500 rendered entries with a "narrow with a filter" prompt beyond that, mirroring the cap pattern from feature 1's search).
+- Performance: the ~5MB `strongs-concordance.json` is lazy-loaded on first use (creating/toggling a rule, or opening the word study panel), except it's loaded eagerly at app init *only if* a smart tag rule already exists from a previous session — so users who never touch this feature pay zero extra load cost.
+- **Real bug found and fixed during verification, not cosmetic:** rendering the Tags browse view crashed (`Cannot read properties of undefined (reading 'verses')`) the first time a smart tag's concordance included a verse from one of the five single-chapter books (Obadiah, Philemon, 2 John, 3 John, Jude) — the exact pre-existing `data/bible.json` bug flagged during the Phase 1 data spike (those books stored `chapters` as a bare object instead of a one-element array) had never actually been hit by any other code path until this feature exercised it. Fixed at the data level (`data/bible.json` now stores `chapters` as an array for all 66 books), which also protects the reading/search/verse-detail views from the same latent bug.
+- Verified live: created a rule-tag on G26 from Romans 5:8 → Matthew 24:12 (never manually tagged) correctly picked up the tag and its dot → verse-detail showed a dashed "auto" chip → Tags browse view showed "AgapeLove · 99" (99 distinct verses — correctly deduplicated from the concordance's 108 raw word-occurrences, since a few verses use the word twice) → filtering to it rendered 88 grouped passage cards.
 
-- No new data beyond Tap-to-Study's Phase 0/1.
-- New concept: computed/"smart" tags — rendered live from a rule + concordance index rather than written into `verseTags`, so they don't mutate user data.
-- Effectively the same mechanism as Tap-to-Study's "Tag All Occurrences" action, generalized into a standing rule instead of a one-time action.
-
-**Dependencies:** Tap-to-Study Phase 0/1 (Strong's-tagged text + concordance index).
+**Dependencies:** none — built on Tap-to-Study's Phase 0/1 concordance index, already shipped.
 
 ### B1. Topic smart folders (Nave's Topical Bible / Treasury of Scripture Knowledge)
 **Effort: L**
@@ -130,7 +131,7 @@ Feature 1's multi-select + bulk-tag-apply mechanism is a direct prerequisite for
 | Feature | Effort | Blocked on |
 |---|---|---|
 | 1. Search & Select Batch Tagging | **M** | ~~Nothing~~ **Done, shipped 2026-07-29** |
-| 3A. Strong's rule tagging | **S** (after Phase 1) | Tap-to-Study Phase 1 (data layer build) |
+| 3A. Strong's rule tagging | **Done** | Shipped 2026-07-29 |
 | 2. Tap-to-Study Word Study Sheet | **Done** | All phases shipped 2026-07-29 |
 | 3B1. Topic smart folders (Nave's/TSK) | **L** | Own data spike (not started) |
 | 3B2. Named-entity auto-tags | **XL** | Undefined — dataset existence unknown |

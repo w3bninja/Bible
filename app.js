@@ -73,6 +73,8 @@ async function init() {
 
     booksById = new Map(bible.books.map((b) => [b.id, b]));
 
+    if (anySmartTagsDefined()) await ensureConcordanceLoaded();
+
     const last = JSON.parse(localStorage.getItem("bible-study:lastLocation") || "null");
     if (last && booksById.has(last.bookId)) {
       selectBook(last.bookId, last.chapter || 1);
@@ -191,7 +193,7 @@ function buildVerseSpan(key, text, showNum, verseNum) {
   if (selection.has(key)) span.classList.add("selected");
 
   const entry = tagsData.verseTags[key];
-  const tagIds = (entry && entry.tagIds) || [];
+  const tagIds = effectiveTagIdsForKey(key);
   if (entry && entry.note) span.classList.add("has-note");
   if (tagIds.length) {
     span.classList.add("tagged");
@@ -439,25 +441,40 @@ function renderVerseDetailTags() {
   const container = el("verseDetailTags");
   container.innerHTML = "";
   const entry = tagsData.verseTags[currentVerseKey];
+  const manualIds = (entry && entry.tagIds) || [];
+  const smartIds = smartTagIdsForKey(currentVerseKey);
 
-  if (entry && entry.tagIds) {
-    entry.tagIds.forEach((tagId) => {
+  manualIds.forEach((tagId) => {
+    const tag = tagsData.tags.find((t) => t.id === tagId);
+    if (!tag) return;
+    const { bg, text: fg } = chipColors(tag.hue);
+    const chip = document.createElement("button");
+    chip.className = "tag-chip-removable";
+    chip.style.background = bg;
+    chip.style.color = fg;
+    chip.innerHTML = `<span>${escapeHtml(tag.name)}</span><span class="x">×</span>`;
+    chip.addEventListener("click", () => {
+      toggleVerseTag(currentVerseKey, tagId);
+      renderVerseDetailTags();
+      renderVerses();
+    });
+    container.appendChild(chip);
+  });
+
+  smartIds
+    .filter((tagId) => !manualIds.includes(tagId))
+    .forEach((tagId) => {
       const tag = tagsData.tags.find((t) => t.id === tagId);
       if (!tag) return;
       const { bg, text: fg } = chipColors(tag.hue);
-      const chip = document.createElement("button");
-      chip.className = "tag-chip-removable";
+      const chip = document.createElement("span");
+      chip.className = "tag-chip-smart";
       chip.style.background = bg;
       chip.style.color = fg;
-      chip.innerHTML = `<span>${escapeHtml(tag.name)}</span><span class="x">×</span>`;
-      chip.addEventListener("click", () => {
-        toggleVerseTag(currentVerseKey, tagId);
-        renderVerseDetailTags();
-        renderVerses();
-      });
+      chip.title = `Auto-tagged: this verse contains ${tag.rule.strongs}`;
+      chip.innerHTML = `<span>${escapeHtml(tag.name)}</span><span class="auto-mark">auto</span>`;
       container.appendChild(chip);
     });
-  }
 
   const addBtn = document.createElement("button");
   addBtn.className = "tag-add-btn";
@@ -611,12 +628,18 @@ function closeTagAssign() {
 // ---------- New tag creation ----------
 
 let selectedHue = HUE_PRESETS[0];
+let pendingSmartTagRule = null; // set to a Strong's number when the "+ new smart tag" flow opens this modal
 
-el("tagAssignAddBtn").addEventListener("click", () => {
+function openNewTagModal() {
   el("newTagName").value = "";
   selectedHue = HUE_PRESETS[Math.floor(Math.random() * HUE_PRESETS.length)];
   renderHueSwatches();
   el("newTagOverlay").classList.remove("hidden");
+}
+
+el("tagAssignAddBtn").addEventListener("click", () => {
+  pendingSmartTagRule = null;
+  openNewTagModal();
 });
 
 function renderHueSwatches() {
@@ -635,7 +658,10 @@ function renderHueSwatches() {
   });
 }
 
-el("newTagCancel").addEventListener("click", () => el("newTagOverlay").classList.add("hidden"));
+el("newTagCancel").addEventListener("click", () => {
+  pendingSmartTagRule = null;
+  el("newTagOverlay").classList.add("hidden");
+});
 
 el("newTagForm").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -644,7 +670,21 @@ el("newTagForm").addEventListener("submit", (e) => {
 
   const tag = { id: crypto.randomUUID(), name, hue: selectedHue };
   tagsData.tags.push(tag);
-  toggleTagForKeys(tagAssignKeys, tag.id);
+
+  if (pendingSmartTagRule) {
+    tag.rule = { strongs: pendingSmartTagRule };
+    pendingSmartTagRule = null;
+    invalidateSmartTagCache();
+    scheduleSave();
+    ensureConcordanceLoaded().then(() => {
+      invalidateSmartTagCache();
+      renderVerses();
+      if (currentView === "verse") renderVerseDetailTags();
+      if (wordStudyConcNum) renderWordStudyCard(wordStudyConcNum, [wordStudyConcNum]);
+    });
+  } else {
+    toggleTagForKeys(tagAssignKeys, tag.id);
+  }
 
   el("newTagOverlay").classList.add("hidden");
   renderTagAssignList();
@@ -673,7 +713,11 @@ function renderTagFilterBar() {
   bar.appendChild(allBtn);
 
   tagsData.tags.forEach((tag) => {
-    const count = Object.values(tagsData.verseTags).filter((e) => e.tagIds.includes(tag.id)).length;
+    const manualKeys = Object.entries(tagsData.verseTags)
+      .filter(([, e]) => e.tagIds.includes(tag.id))
+      .map(([k]) => k);
+    const smartKeys = getSmartTagSets()?.get(tag.id) || new Set();
+    const count = new Set([...manualKeys, ...smartKeys]).size;
     const btn = document.createElement("button");
     btn.className = "filter-pill" + (activeTagFilter === tag.id ? " active" : "");
     btn.textContent = `${tag.name} · ${count}`;
@@ -689,13 +733,24 @@ function sameTagIds(a, b) {
   return a.length === b.length && a.every((id) => b.includes(id));
 }
 
+const TAG_VERSE_LIST_CAP = 500;
+
 function renderTagVerseList() {
   const container = el("tagVerseList");
   container.innerHTML = "";
 
-  const entries = Object.entries(tagsData.verseTags)
-    .filter(([, entry]) => (activeTagFilter ? entry.tagIds.includes(activeTagFilter) : true))
-    .map(([key]) => ({ key, ...parseVerseKey(key) }))
+  const keySet = new Set(Object.keys(tagsData.verseTags));
+  const smartSets = getSmartTagSets();
+  if (smartSets) {
+    smartSets.forEach((set, tagId) => {
+      if (activeTagFilter && tagId !== activeTagFilter) return;
+      set.forEach((k) => keySet.add(k));
+    });
+  }
+
+  let entries = [...keySet]
+    .filter((key) => (activeTagFilter ? effectiveTagIdsForKey(key).includes(activeTagFilter) : true))
+    .map((key) => ({ key, ...parseVerseKey(key) }))
     .sort((a, b) => {
       const oa = booksById.get(a.bookId)?.order ?? 0;
       const ob = booksById.get(b.bookId)?.order ?? 0;
@@ -707,19 +762,23 @@ function renderTagVerseList() {
     return;
   }
 
+  const truncated = entries.length > TAG_VERSE_LIST_CAP;
+  if (truncated) entries = entries.slice(0, TAG_VERSE_LIST_CAP);
+
   // Group consecutive verses that share the same note + tags into one card,
   // so a note written for a passage reads as belonging to the whole passage.
   const groups = [];
   entries.forEach(({ key, bookId, chapter, verse }) => {
-    const entry = tagsData.verseTags[key];
+    const note = tagsData.verseTags[key]?.note || "";
+    const tagIds = effectiveTagIdsForKey(key);
     const last = groups[groups.length - 1];
     if (
       last &&
       last.bookId === bookId &&
       last.chapter === chapter &&
       verse === last.endVerse + 1 &&
-      (entry.note || "") === (last.note || "") &&
-      sameTagIds(entry.tagIds || [], last.tagIds || [])
+      note === (last.note || "") &&
+      sameTagIds(tagIds, last.tagIds || [])
     ) {
       last.endVerse = verse;
       last.keys.push(key);
@@ -729,8 +788,8 @@ function renderTagVerseList() {
         chapter,
         startVerse: verse,
         endVerse: verse,
-        note: entry.note || "",
-        tagIds: entry.tagIds || [],
+        note,
+        tagIds,
         keys: [key],
       });
     }
@@ -777,6 +836,13 @@ function renderTagVerseList() {
     });
     container.appendChild(card);
   });
+
+  if (truncated) {
+    const note = document.createElement("div");
+    note.className = "empty-msg";
+    note.textContent = `Showing first ${TAG_VERSE_LIST_CAP} verses — narrow with a tag filter above to see more.`;
+    container.appendChild(note);
+  }
 }
 
 // ---------- Search ----------
@@ -1006,9 +1072,9 @@ const CONCORDANCE_RENDER_CAP = 300;
 function loadStrongsData() {
   if (!strongsDataPromise) {
     strongsDataPromise = Promise.all([
-      fetchJSON("data/strongs-tokens.json"),
-      fetchJSON("data/strongs-lexicon.json"),
-      fetchJSON("data/strongs-concordance.json"),
+      strongsTokens ? Promise.resolve(strongsTokens) : fetchJSON("data/strongs-tokens.json"),
+      strongsLexicon ? Promise.resolve(strongsLexicon) : fetchJSON("data/strongs-lexicon.json"),
+      strongsConcordance ? Promise.resolve(strongsConcordance) : fetchJSON("data/strongs-concordance.json"),
     ]).then(([tokens, lexicon, concordance]) => {
       strongsTokens = tokens;
       strongsLexicon = lexicon;
@@ -1016,6 +1082,62 @@ function loadStrongsData() {
     });
   }
   return strongsDataPromise;
+}
+
+// ---------- Smart (Strong's-rule) tags ----------
+//
+// A tag with a `rule: {strongs: "G26"}` field auto-applies to every verse
+// containing that Strong's number, computed live from the concordance index
+// rather than written into verseTags — so it never mutates saved verse data.
+
+let concordanceOnlyPromise = null;
+let smartTagSetsCache = null; // Map<tagId, Set<verseKey>>
+
+function ensureConcordanceLoaded() {
+  if (strongsConcordance) return Promise.resolve();
+  if (!concordanceOnlyPromise) {
+    concordanceOnlyPromise = fetchJSON("data/strongs-concordance.json").then((c) => {
+      strongsConcordance = c;
+    });
+  }
+  return concordanceOnlyPromise;
+}
+
+function invalidateSmartTagCache() {
+  smartTagSetsCache = null;
+}
+
+function getSmartTagSets() {
+  if (!strongsConcordance) return null;
+  if (!smartTagSetsCache) {
+    smartTagSetsCache = new Map();
+    tagsData.tags.forEach((tag) => {
+      if (tag.rule && tag.rule.strongs) {
+        smartTagSetsCache.set(tag.id, new Set(strongsConcordance[tag.rule.strongs] || []));
+      }
+    });
+  }
+  return smartTagSetsCache;
+}
+
+function smartTagIdsForKey(key) {
+  const sets = getSmartTagSets();
+  if (!sets) return [];
+  const ids = [];
+  sets.forEach((set, tagId) => {
+    if (set.has(key)) ids.push(tagId);
+  });
+  return ids;
+}
+
+function effectiveTagIdsForKey(key) {
+  const manual = (tagsData.verseTags[key] && tagsData.verseTags[key].tagIds) || [];
+  const smart = smartTagIdsForKey(key);
+  return smart.length ? [...new Set([...manual, ...smart])] : manual;
+}
+
+function anySmartTagsDefined() {
+  return tagsData.tags.some((t) => t.rule && t.rule.strongs);
 }
 
 async function openWordStudyPanel(key) {
@@ -1137,6 +1259,10 @@ function renderWordStudyCard(num, allNums) {
         ? `<div><div class="wsc-section-label">Translated as</div>${buildTranslationDonut(entry.translations)}</div>`
         : ""
     }
+    <div>
+      <div class="wsc-section-label">Auto-tag verses with this word</div>
+      <div class="wsc-smart-tags" id="wscSmartTags"></div>
+    </div>
     <div class="wsc-actions">
       <button type="button" class="btn btn-accent-solid btn-small" id="wscTagAllBtn">Tag all occurrences…</button>
       <button type="button" class="btn btn-outline btn-small" id="wscCopyNoteBtn">Copy study note</button>
@@ -1145,6 +1271,8 @@ function renderWordStudyCard(num, allNums) {
     <div id="wscConcSection" class="wsc-conc-section ${wordStudyConcExpanded ? "" : "hidden"}"></div>
     ${allNums.length > 1 ? `<div class="wsc-section-label">This word also carries ${allNums.length - 1} other tag(s) — showing ${escapeHtml(num)}.</div>` : ""}
   `;
+
+  renderSmartTagPills(num);
 
   el("wscTagAllBtn").addEventListener("click", () => {
     if (!keys.length) return;
@@ -1172,6 +1300,48 @@ function renderWordStudyCard(num, allNums) {
   });
 
   if (wordStudyConcExpanded) renderConcordanceSection(num, keys);
+}
+
+function renderSmartTagPills(num) {
+  const container = el("wscSmartTags");
+  container.innerHTML = "";
+
+  tagsData.tags.forEach((tag) => {
+    const active = tag.rule && tag.rule.strongs === num;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "tag-toggle-pill";
+    btn.textContent = tag.name;
+    if (active) {
+      const { bg, text: fg } = chipColors(tag.hue);
+      btn.style.background = bg;
+      btn.style.color = fg;
+      btn.style.borderColor = "transparent";
+    }
+    btn.addEventListener("click", () => {
+      tag.rule = active ? undefined : { strongs: num };
+      invalidateSmartTagCache();
+      scheduleSave();
+      ensureConcordanceLoaded().then(() => {
+        invalidateSmartTagCache();
+        renderVerses();
+        renderSmartTagPills(num);
+        if (currentView === "verse") renderVerseDetailTags();
+        if (currentView === "tags") renderTagsView();
+      });
+    });
+    container.appendChild(btn);
+  });
+
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "tag-add-btn";
+  addBtn.textContent = "+ new";
+  addBtn.addEventListener("click", () => {
+    pendingSmartTagRule = num;
+    openNewTagModal();
+  });
+  container.appendChild(addBtn);
 }
 
 function renderConcordanceSection(num, keys) {
