@@ -94,13 +94,14 @@ function showView(view) {
   el("readView").classList.toggle("hidden", view !== "read");
   el("verseView").classList.toggle("hidden", view !== "verse");
   el("tagsView").classList.toggle("hidden", view !== "tags");
+  el("topicsView").classList.toggle("hidden", view !== "topics");
   el("searchView").classList.toggle("hidden", view !== "search");
 
   const showBack = view === "verse" || view === "search";
   el("backBtn").classList.toggle("hidden", !showBack);
   el("collapseBtn").classList.toggle("hidden", showBack);
 
-  const breadcrumbs = { read: "Reading", verse: "Verse & Notes", tags: "Your tagged verses", search: "Search" };
+  const breadcrumbs = { read: "Reading", verse: "Verse & Notes", tags: "Your tagged verses", topics: "Auto-tags & topics", search: "Search" };
   el("breadcrumb").textContent = breadcrumbs[view] || "";
 
   document.querySelectorAll(".nav-item").forEach((item) => {
@@ -115,6 +116,9 @@ document.querySelectorAll(".nav-item").forEach((item) => {
     } else if (item.dataset.view === "tags") {
       renderTagsView();
       showView("tags");
+    } else if (item.dataset.view === "topics") {
+      renderTopicsView();
+      showView("topics");
     }
   });
 });
@@ -625,10 +629,15 @@ function closeTagAssign() {
   }
 }
 
-// ---------- New tag creation ----------
+// ---------- New/edit tag creation ----------
+//
+// A single modal handles: plain manual tags, and tags with a rule (Strong's
+// number, topic, or person — one at a time). It's used both to create a new
+// tag and to edit an existing one's name/hue/rule.
 
 let selectedHue = HUE_PRESETS[0];
-let pendingSmartTagRule = null; // set to a Strong's number when the "+ new smart tag" flow opens this modal
+let editingTagId = null; // set when the modal is in edit mode
+let newTagAutoAssignKeys = null; // set only when opened from the per-verse tag-assign flow
 
 function populateDatalist(datalistId, names) {
   const datalist = el(datalistId);
@@ -643,17 +652,26 @@ function populateDatalist(datalistId, names) {
     });
 }
 
-function openNewTagModal() {
-  el("newTagName").value = "";
-  el("newTagTopic").value = "";
-  el("newTagPerson").value = "";
-  selectedHue = HUE_PRESETS[Math.floor(Math.random() * HUE_PRESETS.length)];
+function openNewTagModal(opts = {}) {
+  editingTagId = opts.editTagId || null;
+  newTagAutoAssignKeys = opts.autoAssignKeys || null;
+  const tag = editingTagId ? tagsData.tags.find((t) => t.id === editingTagId) : null;
+  const manualOnly = !!opts.manualOnly;
+
+  el("newTagModalTitle").textContent = editingTagId ? "Edit Tag" : manualOnly ? "New Tag" : "New Auto-Tag";
+  el("newTagSubmitBtn").textContent = editingTagId ? "Save" : "Create";
+  el("newTagName").value = tag ? tag.name : opts.name || "";
+  el("newTagStrongs").value = opts.strongs || (tag && tag.rule && tag.rule.strongs) || "";
+  el("newTagTopic").value = opts.topic || (tag && tag.rule && tag.rule.topic) || "";
+  el("newTagPerson").value = (tag && tag.rule && tag.rule.person) || "";
+  selectedHue = tag ? tag.hue : HUE_PRESETS[Math.floor(Math.random() * HUE_PRESETS.length)];
   renderHueSwatches();
 
-  const showFields = !pendingSmartTagRule;
-  el("newTagTopicRow").classList.toggle("hidden", !showFields);
-  el("newTagPersonRow").classList.toggle("hidden", !showFields);
-  if (showFields) {
+  el("newTagStrongsRow").classList.toggle("hidden", manualOnly);
+  el("newTagTopicRow").classList.toggle("hidden", manualOnly);
+  el("newTagPersonRow").classList.toggle("hidden", manualOnly);
+
+  if (!manualOnly) {
     ensureTopicsLoaded().then(() => populateDatalist("topicsDatalist", Object.keys(topicsData)));
     ensurePersonsLoaded().then(() => populateDatalist("personsDatalist", Object.keys(personsData)));
   }
@@ -662,9 +680,10 @@ function openNewTagModal() {
 }
 
 el("tagAssignAddBtn").addEventListener("click", () => {
-  pendingSmartTagRule = null;
-  openNewTagModal();
+  openNewTagModal({ autoAssignKeys: tagAssignKeys, manualOnly: true });
 });
+
+el("newTagPageBtn").addEventListener("click", () => openNewTagModal({ manualOnly: true }));
 
 function renderHueSwatches() {
   const container = el("hueSwatches");
@@ -683,7 +702,8 @@ function renderHueSwatches() {
 }
 
 el("newTagCancel").addEventListener("click", () => {
-  pendingSmartTagRule = null;
+  editingTagId = null;
+  newTagAutoAssignKeys = null;
   el("newTagOverlay").classList.add("hidden");
 });
 
@@ -692,52 +712,172 @@ el("newTagForm").addEventListener("submit", (e) => {
   const name = el("newTagName").value.trim();
   if (!name) return;
 
-  const tag = { id: crypto.randomUUID(), name, hue: selectedHue };
-  tagsData.tags.push(tag);
-
+  const strongsInput = el("newTagStrongs").value.trim().toUpperCase();
   const topicInput = el("newTagTopic").value.trim();
-  const matchedTopic = !pendingSmartTagRule && topicInput
-    ? Object.keys(topicsData || {}).find((t) => t.toLowerCase() === topicInput.toLowerCase())
-    : null;
   const personInput = el("newTagPerson").value.trim();
-  const matchedPerson = !pendingSmartTagRule && !matchedTopic && personInput
-    ? Object.keys(personsData || {}).find((p) => p.toLowerCase() === personInput.toLowerCase())
-    : null;
 
-  if (pendingSmartTagRule) {
-    tag.rule = { strongs: pendingSmartTagRule };
-    pendingSmartTagRule = null;
-    invalidateSmartTagCache();
-    scheduleSave();
-    ensureConcordanceLoaded().then(() => {
-      invalidateSmartTagCache();
-      renderVerses();
-      if (currentView === "verse") renderVerseDetailTags();
-      if (wordStudyConcNum) renderWordStudyCard(wordStudyConcNum, [wordStudyConcNum]);
-    });
-  } else if (matchedTopic || matchedPerson) {
-    tag.rule = matchedTopic ? { topic: matchedTopic } : { person: matchedPerson };
-    invalidateSmartTagCache();
-    scheduleSave();
-    renderVerses();
-    if (currentView === "verse") renderVerseDetailTags();
-    if (currentView === "tags") renderTagsView();
-  } else {
-    toggleTagForKeys(tagAssignKeys, tag.id);
+  let rule = null;
+  if (strongsInput && /^[GH]\d+$/.test(strongsInput)) {
+    rule = { strongs: strongsInput };
+  } else if (topicInput) {
+    const matched = Object.keys(topicsData || {}).find((t) => t.toLowerCase() === topicInput.toLowerCase());
+    if (matched) rule = { topic: matched };
+  } else if (personInput) {
+    const matched = Object.keys(personsData || {}).find((p) => p.toLowerCase() === personInput.toLowerCase());
+    if (matched) rule = { person: matched };
   }
 
+  let tag;
+  if (editingTagId) {
+    tag = tagsData.tags.find((t) => t.id === editingTagId);
+    tag.name = name;
+    tag.hue = selectedHue;
+    if (rule) tag.rule = rule;
+    else delete tag.rule;
+  } else {
+    tag = { id: crypto.randomUUID(), name, hue: selectedHue };
+    if (rule) tag.rule = rule;
+    tagsData.tags.push(tag);
+    if (!rule && newTagAutoAssignKeys) toggleTagForKeys(newTagAutoAssignKeys, tag.id);
+  }
+
+  editingTagId = null;
+  newTagAutoAssignKeys = null;
+  invalidateSmartTagCache();
+  scheduleSave();
+
+  const finish = () => {
+    renderVerses();
+    renderTagAssignList();
+    if (currentView === "verse") renderVerseDetailTags();
+    if (currentView === "tags") renderTagsView();
+    if (currentView === "topics") renderTopicsView();
+    if (wordStudyConcNum) renderWordStudyCard(wordStudyConcNum, [wordStudyConcNum]);
+  };
+  if (rule && rule.strongs) ensureConcordanceLoaded().then(finish);
+  else finish();
+
   el("newTagOverlay").classList.add("hidden");
-  renderTagAssignList();
-  renderVerses();
-  if (currentView === "verse") renderVerseDetailTags();
 });
 
-// ---------- Tags browse view ----------
+// ---------- Tags browse view (manual tags only) ----------
+
+function isSmartTag(tag) {
+  return !!(tag.rule && (tag.rule.strongs || tag.rule.topic || tag.rule.person));
+}
 
 function renderTagsView() {
   renderTagFilterBar();
   renderTagVerseList();
 }
+
+function ruleDescription(rule) {
+  if (rule.strongs) return `Strong's ${rule.strongs}`;
+  if (rule.topic) return `Topic: ${rule.topic}`;
+  if (rule.person) return `Person: ${rule.person}`;
+  return "";
+}
+
+// ---------- Topics view (auto-tags: create/edit/manage, browse Nave's topics) ----------
+
+function renderTopicsView() {
+  renderAutoTagsList();
+}
+
+function renderAutoTagsList() {
+  const list = el("autoTagsList");
+  const ruleTags = tagsData.tags.filter(isSmartTag);
+  list.innerHTML = "";
+
+  if (!ruleTags.length) {
+    list.innerHTML = '<div class="empty-msg">No auto-tags yet. Create one above, or find a topic to tag below.</div>';
+    return;
+  }
+
+  ruleTags.forEach((tag) => {
+    const { bg, text: fg } = chipColors(tag.hue);
+    const row = document.createElement("div");
+    row.className = "smart-tag-row";
+    row.innerHTML = `
+      <span class="tag-chip" style="background:${bg};color:${fg}">${escapeHtml(tag.name)}</span>
+      <span class="smart-tag-desc">${escapeHtml(ruleDescription(tag.rule))}</span>
+    `;
+    row.addEventListener("click", (e) => {
+      if (e.target.closest("button")) return;
+      activeTagFilter = tag.id;
+      showView("tags");
+      renderTagsView();
+    });
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "btn btn-outline btn-small";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", () => openNewTagModal({ editTagId: tag.id }));
+    row.appendChild(editBtn);
+    list.appendChild(row);
+  });
+}
+
+document.querySelectorAll(".subnav-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    const nav = tab.closest(".tags-subnav");
+    nav.querySelectorAll(".subnav-tab").forEach((t) => t.classList.toggle("active", t === tab));
+    const showBrowse = tab.dataset.topictab === "browse";
+    el("myAutoTagsTab").classList.toggle("hidden", showBrowse);
+    el("browseTopicsTab").classList.toggle("hidden", !showBrowse);
+    if (showBrowse) renderTopicsBrowseList(el("topicsSearchInput").value);
+  });
+});
+
+el("newAutoTagBtn").addEventListener("click", () => openNewTagModal());
+
+const TOPICS_BROWSE_CAP = 300;
+
+function renderTopicsBrowseList(query) {
+  const container = el("topicsBrowseList");
+  container.innerHTML = '<div class="empty-msg">Loading topics…</div>';
+
+  ensureTopicsLoaded().then(() => {
+    const q = (query || "").trim().toLowerCase();
+    const names = Object.keys(topicsData)
+      .filter((n) => !q || n.toLowerCase().includes(q))
+      .sort();
+
+    container.innerHTML = "";
+    if (!names.length) {
+      container.innerHTML = '<div class="empty-msg">No topics match your search.</div>';
+      return;
+    }
+
+    names.slice(0, TOPICS_BROWSE_CAP).forEach((name) => {
+      const count = topicsData[name].length;
+      const row = document.createElement("div");
+      row.className = "topic-browse-row";
+      row.innerHTML = `
+        <span class="topic-browse-name">${escapeHtml(name)}</span>
+        <span class="topic-browse-count">${count} verse${count === 1 ? "" : "s"}</span>
+      `;
+      const addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "btn btn-outline btn-small";
+      addBtn.textContent = "+ Tag";
+      addBtn.addEventListener("click", () => openNewTagModal({ topic: name, name }));
+      row.appendChild(addBtn);
+      container.appendChild(row);
+    });
+
+    if (names.length > TOPICS_BROWSE_CAP) {
+      const more = document.createElement("div");
+      more.className = "empty-msg";
+      more.textContent = `Showing first ${TOPICS_BROWSE_CAP} of ${names.length} — narrow your search to see more.`;
+      container.appendChild(more);
+    }
+  });
+}
+
+el("topicsSearchInput").addEventListener("input", () => {
+  renderTopicsBrowseList(el("topicsSearchInput").value);
+});
 
 function renderTagFilterBar() {
   const bar = el("tagFilterBar");
@@ -752,21 +892,38 @@ function renderTagFilterBar() {
   });
   bar.appendChild(allBtn);
 
-  tagsData.tags.forEach((tag) => {
+  function tagCount(tag) {
     const manualKeys = Object.entries(tagsData.verseTags)
       .filter(([, e]) => e.tagIds.includes(tag.id))
       .map(([k]) => k);
     const smartKeys = getSmartTagSets()?.get(tag.id) || new Set();
-    const count = new Set([...manualKeys, ...smartKeys]).size;
+    return new Set([...manualKeys, ...smartKeys]).size;
+  }
+
+  const manualTags = tagsData.tags.filter((t) => !isSmartTag(t));
+  manualTags.forEach((tag) => {
     const btn = document.createElement("button");
     btn.className = "filter-pill" + (activeTagFilter === tag.id ? " active" : "");
-    btn.textContent = `${tag.name} · ${count}`;
+    btn.textContent = `${tag.name} · ${tagCount(tag)}`;
     btn.addEventListener("click", () => {
       activeTagFilter = tag.id;
       renderTagsView();
     });
     bar.appendChild(btn);
   });
+
+  // Auto-tags aren't listed as pills here (managed on the Topics page), but
+  // if we've drilled in from one via Topics, show it as an active pill so
+  // the filter state is legible rather than orphaned.
+  if (activeTagFilter && !manualTags.some((t) => t.id === activeTagFilter)) {
+    const autoTag = tagsData.tags.find((t) => t.id === activeTagFilter);
+    if (autoTag) {
+      const btn = document.createElement("button");
+      btn.className = "filter-pill active";
+      btn.textContent = `${autoTag.name} · ${tagCount(autoTag)}`;
+      bar.appendChild(btn);
+    }
+  }
 }
 
 function sameTagIds(a, b) {
@@ -1380,20 +1537,22 @@ function renderWordStudyCard(num, allNums) {
         ? `<div><div class="wsc-section-label">Translated as</div>${buildTranslationDonut(entry.translations)}</div>`
         : ""
     }
-    <div>
-      <div class="wsc-section-label">Auto-tag verses with this word</div>
-      <div class="wsc-smart-tags" id="wscSmartTags"></div>
-    </div>
     <div class="wsc-actions">
       <button type="button" class="btn btn-accent-solid btn-small" id="wscTagAllBtn">Tag all occurrences…</button>
       <button type="button" class="btn btn-outline btn-small" id="wscCopyNoteBtn">Copy study note</button>
+      <button type="button" class="btn btn-outline btn-small" id="wscAutoTagBtn">Auto-tag this word…</button>
     </div>
     <button type="button" class="wsc-conc-toggle" id="wscConcToggle">${occurrences} occurrence${occurrences === 1 ? "" : "s"} in this text ${wordStudyConcExpanded ? "▴" : "▾"}</button>
     <div id="wscConcSection" class="wsc-conc-section ${wordStudyConcExpanded ? "" : "hidden"}"></div>
     ${allNums.length > 1 ? `<div class="wsc-section-label">This word also carries ${allNums.length - 1} other tag(s) — showing ${escapeHtml(num)}.</div>` : ""}
   `;
 
-  renderSmartTagPills(num);
+  el("wscAutoTagBtn").addEventListener("click", () => {
+    closeWordStudyPanel();
+    showView("topics");
+    renderTopicsView();
+    openNewTagModal({ strongs: num });
+  });
 
   el("wscTagAllBtn").addEventListener("click", () => {
     if (!keys.length) return;
@@ -1421,53 +1580,6 @@ function renderWordStudyCard(num, allNums) {
   });
 
   if (wordStudyConcExpanded) renderConcordanceSection(num, keys);
-}
-
-function renderSmartTagPills(num) {
-  const container = el("wscSmartTags");
-  container.innerHTML = "";
-
-  tagsData.tags.forEach((tag) => {
-    const active = tag.rule && tag.rule.strongs === num;
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "tag-toggle-pill";
-    btn.textContent = tag.name;
-    if (active) {
-      const { bg, text: fg } = chipColors(tag.hue);
-      btn.style.background = bg;
-      btn.style.color = fg;
-      btn.style.borderColor = "transparent";
-    }
-    btn.addEventListener("click", () => {
-      if (!active && tag.rule && (tag.rule.topic || tag.rule.person)) {
-        const existing = tag.rule.topic ? `topic "${tag.rule.topic}"` : `person "${tag.rule.person}"`;
-        const ok = confirm(`"${tag.name}" is already an auto-tag for the ${existing}. Switch it to auto-tag by this word instead?`);
-        if (!ok) return;
-      }
-      tag.rule = active ? undefined : { strongs: num };
-      invalidateSmartTagCache();
-      scheduleSave();
-      ensureConcordanceLoaded().then(() => {
-        invalidateSmartTagCache();
-        renderVerses();
-        renderSmartTagPills(num);
-        if (currentView === "verse") renderVerseDetailTags();
-        if (currentView === "tags") renderTagsView();
-      });
-    });
-    container.appendChild(btn);
-  });
-
-  const addBtn = document.createElement("button");
-  addBtn.type = "button";
-  addBtn.className = "tag-add-btn";
-  addBtn.textContent = "+ new";
-  addBtn.addEventListener("click", () => {
-    pendingSmartTagRule = num;
-    openNewTagModal();
-  });
-  container.appendChild(addBtn);
 }
 
 function renderConcordanceSection(num, keys) {

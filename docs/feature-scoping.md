@@ -127,9 +127,19 @@ Free-text prompt (e.g. "tag verses about anxiety") → semantic verse matches.
 
 ## Cross-cutting design note
 
-Features 2, 3A, 3B1, and 3B2 all converge on the same rendering concept: **tags computed at display-time from a rule or index, merged visually with manually-assigned tags, without writing into `verseTags`.** Worth designing this once as a shared `smartTags` mechanism (e.g. `{id, name, hue, source: 'strongs' | 'topic' | 'entity' | 'semantic', ...}`) rather than building it three separate times.
+Features 2, 3A, 3B1, and 3B2 all converge on the same rendering concept: **tags computed at display-time from a rule or index, merged visually with manually-assigned tags, without writing into `verseTags`.** Built as a shared `tag.rule: {strongs|topic|person}` field rather than three separate mechanisms.
 
 Feature 1's multi-select + bulk-tag-apply mechanism is a direct prerequisite for the "tag all occurrences" actions in features 2 and 3A.
+
+### Tags/Topics UI split (2026-07-29, post-ship revision)
+
+After 3A/3B1/3B2 shipped, real usage surfaced that auto-tags (rule-based) and manual tags didn't belong in the same creation flow or the same mental model — auto-tags are closer to "topics" (discoverable, browsable, rule-driven) than to manual tags (deliberately, individually applied). Restructured:
+
+- **Tags page** — manual tags only. Filter pills and the default verse-browsing list exclude any tag with a `rule`. "+ New Tag" creates a plain tag with no rule fields shown.
+- **New Topics page** (new sidebar nav item) — the home for everything rule-based: "Your Auto-Tags" (list of existing rule-tags with an inline description of what they match, click through to browse their verses via the Tags page's existing list rendering, "Edit" to change/clear the rule), and a "Browse Topics" tab (the searchable list of all 4,665 Nave's topics from 3B1, "+ Tag" to create a smart tag directly from a topic).
+- The New/Edit Tag modal is now unified across both pages and both create/edit — `openNewTagModal(opts)` takes a `manualOnly` flag to hide the three rule fields (Strong's number, topic, person) when opened from a manual-tagging context (Tags page's "+ New Tag", or the per-verse "+Add" in the tag-assign modal used while tagging a selection).
+- The word study panel's "Auto-tag this word…" button now jumps to the Topics page (was the Tags page) with the Strong's number pre-filled.
+- Strong's-number rules can now also be typed directly (e.g. `G26`) into the unified modal, not just reached by tapping a word — so all three rule types (Strong's, topic, person) are creatable from one place (the Topics page), while still supporting the word-study shortcut for convenience.
 
 ## Effort summary
 
