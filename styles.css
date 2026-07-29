@@ -953,19 +953,53 @@ mark {
   margin-bottom: 4px;
 }
 
-.wsc-translations {
+.wsc-chart-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  gap: 14px;
 }
 
-.wsc-translation-pill {
+.wsc-donut {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+}
+
+.wsc-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.wsc-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12.5px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  padding: 3px 9px;
-  color: var(--text-nav);
+  color: var(--text-primary);
+}
+
+.wsc-legend-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.wsc-legend-label {
+  font-family: var(--font-serif);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wsc-legend-pct {
+  color: var(--text-muted);
+  margin-left: auto;
+  padding-left: 8px;
+  white-space: nowrap;
 }
 
 .wsc-actions {
@@ -973,4 +1007,56 @@ mark {
   flex-direction: column;
   gap: 8px;
   margin-top: 4px;
+}
+
+.wsc-conc-toggle {
+  font-size: 12.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  padding: 6px 0;
+  text-align: left;
+}
+
+.wsc-conc-section { display: flex; flex-direction: column; gap: 10px; }
+
+.wsc-conc-filters { margin-bottom: 0; }
+
+.wsc-conc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.wsc-conc-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 2px;
+}
+
+.wsc-conc-row:last-child { border-bottom: none; }
+
+.wsc-conc-ref {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.wsc-conc-text {
+  display: block;
+  font-family: var(--font-serif);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-primary);
 }

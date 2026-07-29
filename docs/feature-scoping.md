@@ -61,9 +61,13 @@ Long-press/tap a word to open a bottom sheet: Strong's lexicon card, translation
 - Bug found and fixed along the way: ~95% of lexicon entries (11,514 of 12,040) contained literal undecoded HTML entities in their definitions (e.g. `&#8212` instead of an em dash) — fixed in `scripts/import-strongs.js` with an entity-decoding pass, re-ran the import, verified clean output.
 - Known limitation carried over from feature 1: this uses the app's plain-text substring search infrastructure nowhere here, so nothing new to note there — but the panel currently shows the raw kaiserlik word text (not the app's original wording) for chip labels, per the earlier text-replacement decision; the reading view itself is untouched.
 
-### Phase 3 — Bottom sheet upgrade (not started)
-- Current side panel already covers 3 of the original spec's 4 sections (lexicon card, concordance count + "tag all", copy-note action). Missing: the **translation-breakdown pie/donut chart** (currently a flat list of translation pills — functionally equivalent data, just not charted) and the **full scrollable concordance list with book/testament/author filters** (currently just a count + bulk-tag button, not a browsable list).
-- Open decision: keep the side-panel form factor (arguably a better fit for desktop than a mobile-style bottom sheet) and layer in the chart + concordance list there, rather than building a separate bottom sheet component as originally scoped.
+### Phase 3 — Side panel upgrade (DONE, built 2026-07-29)
+- Confirmed with the user: keep the side-panel form factor permanently rather than building a separate mobile-style bottom sheet — it was judged to work for both desktop and mobile, so the original "bottom sheet" framing from the initial spec is retired in favor of this panel.
+- **Translation-breakdown donut chart**: hand-rolled with a single CSS `conic-gradient` (no charting library, no new dependency), color-coded legend below it with word/count/percentage per translation. Replaces the flat pill list from Phase 2.
+- **Full scrollable concordance list**: expandable "N occurrences in this text ▾" toggle reveals every verse containing the word, with the same All/OT/NT + per-book filter-chip pattern used in feature 1's search results (book chips scoped to only the books the word actually appears in). Capped at rendering 300 rows at a time (`CONCORDANCE_RENDER_CAP`) with a "narrow with a filter" prompt beyond that, since a handful of very common tagged words (e.g. Greek "and") could otherwise render thousands of DOM nodes.
+- Clicking a concordance row closes the panel and navigates straight to that verse (reuses `goToVerseInChapter`), selecting it there.
+- Verified live: opened G26 (agapē) from Romans 5:8 → donut/legend rendered correctly (74.8% love, 24.3% charity, 0.9% dear) → expanded to all 108 occurrences → filter narrowed to Romans (9 rows, including a genuine double-count at Romans 13:10 where "love" appears twice in one verse — concordance correctly reflects per-word occurrences, not per-verse) → clicked a row → panel closed and app navigated to Romans 5 with that verse selected.
+- This closes out feature 2 end-to-end: lexicon card, translation chart, full concordance with filters, tag-all-occurrences, and copy-study-note are all built and working.
 
 **Dependencies:** none remaining — Phase 0 resolved 2026-07-29.
 
@@ -127,7 +131,7 @@ Feature 1's multi-select + bulk-tag-apply mechanism is a direct prerequisite for
 |---|---|---|
 | 1. Search & Select Batch Tagging | **M** | ~~Nothing~~ **Done, shipped 2026-07-29** |
 | 3A. Strong's rule tagging | **S** (after Phase 1) | Tap-to-Study Phase 1 (data layer build) |
-| 2. Tap-to-Study Word Study Sheet | **S** (Phase 3 polish remains) | ~~Data spike~~, ~~Phase 1~~, ~~Phase 2~~ done — shipped 2026-07-29 |
+| 2. Tap-to-Study Word Study Sheet | **Done** | All phases shipped 2026-07-29 |
 | 3B1. Topic smart folders (Nave's/TSK) | **L** | Own data spike (not started) |
 | 3B2. Named-entity auto-tags | **XL** | Undefined — dataset existence unknown |
 | 3C. AI semantic tagging | **XL** | Infra/provider decision, not data |

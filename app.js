@@ -995,6 +995,13 @@ let strongsConcordance = null;
 let strongsDataPromise = null;
 
 let wordStudyVerseKey = null;
+let wordStudyConcNum = null;
+let wordStudyConcExpanded = false;
+let wordStudyConcTestament = null; // null | 'OT' | 'NT'
+let wordStudyConcBook = null;
+
+const CHART_HUES = [250, 10, 145, 40, 290, 190, 330, 70];
+const CONCORDANCE_RENDER_CAP = 300;
 
 function loadStrongsData() {
   if (!strongsDataPromise) {
@@ -1067,7 +1074,41 @@ el("wordStudyBackBtn").addEventListener("click", () => {
 function openWordDetail(strongsNums) {
   el("wordStudyChips").classList.add("hidden");
   el("wordStudyDetail").classList.remove("hidden");
+  wordStudyConcExpanded = false;
+  wordStudyConcTestament = null;
+  wordStudyConcBook = null;
   renderWordStudyCard(strongsNums[0], strongsNums);
+}
+
+function buildTranslationDonut(translations) {
+  const entries = Object.entries(translations || {}).sort((a, b) => b[1] - a[1]);
+  const total = entries.reduce((s, [, c]) => s + c, 0);
+  if (!total) return "";
+
+  let cursor = 0;
+  const stops = entries
+    .map(([, count], i) => {
+      const hue = CHART_HUES[i % CHART_HUES.length];
+      const start = cursor;
+      cursor += (count / total) * 100;
+      return `oklch(0.72 0.13 ${hue}) ${start}% ${cursor}%`;
+    })
+    .join(", ");
+
+  const legend = entries
+    .map(([word, count], i) => {
+      const hue = CHART_HUES[i % CHART_HUES.length];
+      const pct = Math.round((count / total) * 100);
+      return `<div class="wsc-legend-row"><span class="wsc-legend-dot" style="background:oklch(0.72 0.13 ${hue})"></span><span class="wsc-legend-label">${escapeHtml(word)}</span><span class="wsc-legend-pct">${count}× · ${pct}%</span></div>`;
+    })
+    .join("");
+
+  return `
+    <div class="wsc-chart-row">
+      <div class="wsc-donut" style="background: conic-gradient(${stops})"></div>
+      <div class="wsc-legend">${legend}</div>
+    </div>
+  `;
 }
 
 function renderWordStudyCard(num, allNums) {
@@ -1079,12 +1120,9 @@ function renderWordStudyCard(num, allNums) {
     return;
   }
 
-  const translationPills = Object.entries(entry.translations || {})
-    .sort((a, b) => b[1] - a[1])
-    .map(([word, count]) => `<span class="wsc-translation-pill">${escapeHtml(word)} · ${count}×</span>`)
-    .join("");
-
-  const occurrences = (strongsConcordance[num] || []).length;
+  wordStudyConcNum = num;
+  const keys = strongsConcordance[num] || [];
+  const occurrences = keys.length;
 
   card.innerHTML = `
     <div class="wsc-lemma-row">
@@ -1095,20 +1133,20 @@ function renderWordStudyCard(num, allNums) {
     <div class="wsc-pos">${escapeHtml(entry.pos || "")}</div>
     <div class="wsc-def">${escapeHtml(entry.def)}</div>
     ${
-      translationPills
-        ? `<div><div class="wsc-section-label">Translated as</div><div class="wsc-translations">${translationPills}</div></div>`
+      Object.keys(entry.translations || {}).length
+        ? `<div><div class="wsc-section-label">Translated as</div>${buildTranslationDonut(entry.translations)}</div>`
         : ""
     }
-    <div class="wsc-section-label">${occurrences} occurrence${occurrences === 1 ? "" : "s"} in this text</div>
     <div class="wsc-actions">
       <button type="button" class="btn btn-accent-solid btn-small" id="wscTagAllBtn">Tag all occurrences…</button>
       <button type="button" class="btn btn-outline btn-small" id="wscCopyNoteBtn">Copy study note</button>
     </div>
+    <button type="button" class="wsc-conc-toggle" id="wscConcToggle">${occurrences} occurrence${occurrences === 1 ? "" : "s"} in this text ${wordStudyConcExpanded ? "▴" : "▾"}</button>
+    <div id="wscConcSection" class="wsc-conc-section ${wordStudyConcExpanded ? "" : "hidden"}"></div>
     ${allNums.length > 1 ? `<div class="wsc-section-label">This word also carries ${allNums.length - 1} other tag(s) — showing ${escapeHtml(num)}.</div>` : ""}
   `;
 
   el("wscTagAllBtn").addEventListener("click", () => {
-    const keys = strongsConcordance[num] || [];
     if (!keys.length) return;
     openTagAssign(keys, false);
   });
@@ -1127,6 +1165,100 @@ function renderWordStudyCard(num, allNums) {
       console.error(err);
     }
   });
+
+  el("wscConcToggle").addEventListener("click", () => {
+    wordStudyConcExpanded = !wordStudyConcExpanded;
+    renderWordStudyCard(num, allNums);
+  });
+
+  if (wordStudyConcExpanded) renderConcordanceSection(num, keys);
+}
+
+function renderConcordanceSection(num, keys) {
+  const section = el("wscConcSection");
+
+  const filtered = keys.filter((k) => {
+    const { bookId } = parseVerseKey(k);
+    if (wordStudyConcTestament && booksById.get(bookId)?.testament !== wordStudyConcTestament) return false;
+    if (wordStudyConcBook && bookId !== wordStudyConcBook) return false;
+    return true;
+  });
+
+  const booksInScope = (
+    wordStudyConcTestament ? keys.filter((k) => booksById.get(parseVerseKey(k).bookId)?.testament === wordStudyConcTestament) : keys
+  ).reduce((set, k) => set.add(parseVerseKey(k).bookId), new Set());
+
+  const filterBar = document.createElement("div");
+  filterBar.className = "tag-filter-bar wsc-conc-filters";
+
+  const makePill = (label, active, onClick) => {
+    const btn = document.createElement("button");
+    btn.className = "filter-pill" + (active ? " active" : "");
+    btn.textContent = label;
+    btn.addEventListener("click", onClick);
+    filterBar.appendChild(btn);
+  };
+
+  makePill("All", wordStudyConcTestament === null, () => {
+    wordStudyConcTestament = null;
+    wordStudyConcBook = null;
+    renderConcordanceSection(num, keys);
+  });
+  makePill("OT", wordStudyConcTestament === "OT", () => {
+    wordStudyConcTestament = wordStudyConcTestament === "OT" ? null : "OT";
+    wordStudyConcBook = null;
+    renderConcordanceSection(num, keys);
+  });
+  makePill("NT", wordStudyConcTestament === "NT", () => {
+    wordStudyConcTestament = wordStudyConcTestament === "NT" ? null : "NT";
+    wordStudyConcBook = null;
+    renderConcordanceSection(num, keys);
+  });
+
+  if (booksInScope.size > 1) {
+    [...booksInScope]
+      .sort((a, b) => (booksById.get(a)?.order ?? 0) - (booksById.get(b)?.order ?? 0))
+      .forEach((bookId) => {
+        const book = booksById.get(bookId);
+        if (!book) return;
+        makePill(book.name, wordStudyConcBook === bookId, () => {
+          wordStudyConcBook = wordStudyConcBook === bookId ? null : bookId;
+          renderConcordanceSection(num, keys);
+        });
+      });
+  }
+
+  const list = document.createElement("div");
+  list.className = "wsc-conc-list";
+
+  if (filtered.length === 0) {
+    list.innerHTML = '<div class="empty-msg">No occurrences in this filter.</div>';
+  } else {
+    filtered.slice(0, CONCORDANCE_RENDER_CAP).forEach((key) => {
+      const { bookId, chapter, verse } = parseVerseKey(key);
+      const tokens = strongsTokens[key] || [];
+      const text = tokens.map((t) => t.t).join(" ");
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "wsc-conc-row";
+      row.innerHTML = `<span class="wsc-conc-ref">${refLabel(bookId, chapter, verse)}</span><span class="wsc-conc-text">${escapeHtml(text)}</span>`;
+      row.addEventListener("click", () => {
+        closeWordStudyPanel();
+        goToVerseInChapter([key]);
+      });
+      list.appendChild(row);
+    });
+    if (filtered.length > CONCORDANCE_RENDER_CAP) {
+      const more = document.createElement("div");
+      more.className = "empty-msg";
+      more.textContent = `Showing first ${CONCORDANCE_RENDER_CAP} of ${filtered.length} — narrow with a filter above to see more.`;
+      list.appendChild(more);
+    }
+  }
+
+  section.innerHTML = "";
+  section.appendChild(filterBar);
+  section.appendChild(list);
 }
 
 // ---------- Persistence ----------
