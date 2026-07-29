@@ -93,22 +93,37 @@ async function init() {
 // ---------- View switching ----------
 
 function showView(view) {
+  if (view !== "read") stopReading();
   currentView = view;
   el("readView").classList.toggle("hidden", view !== "read");
   el("verseView").classList.toggle("hidden", view !== "verse");
   el("tagsView").classList.toggle("hidden", view !== "tags");
   el("topicsView").classList.toggle("hidden", view !== "topics");
+  el("topicReadingView").classList.toggle("hidden", view !== "topicReading");
   el("searchView").classList.toggle("hidden", view !== "search");
 
-  const showBack = view === "verse" || view === "search";
+  const showBack = view === "verse" || view === "search" || view === "topicReading";
   el("backBtn").classList.toggle("hidden", !showBack);
   el("collapseBtn").classList.toggle("hidden", showBack);
 
-  const breadcrumbs = { read: "Reading", verse: "Verse & Notes", tags: "Your tagged verses", topics: "Auto-tags & topics", search: "Search" };
+  const breadcrumbs = {
+    read: "Reading",
+    verse: "Verse & Notes",
+    tags: "Your tagged verses",
+    topics: "Auto-tags & topics",
+    topicReading: "Topic reading",
+    search: "Search",
+  };
   el("breadcrumb").textContent = breadcrumbs[view] || "";
 
   document.querySelectorAll(".nav-item").forEach((item) => {
-    item.classList.toggle("active", item.dataset.view === view || (view === "verse" && item.dataset.view === "read") || (view === "search" && item.dataset.view === "read"));
+    item.classList.toggle(
+      "active",
+      item.dataset.view === view ||
+        (view === "verse" && item.dataset.view === "read") ||
+        (view === "search" && item.dataset.view === "read") ||
+        (view === "topicReading" && item.dataset.view === "topics")
+    );
   });
 }
 
@@ -126,7 +141,14 @@ document.querySelectorAll(".nav-item").forEach((item) => {
   });
 });
 
-el("backBtn").addEventListener("click", () => showView("read"));
+el("backBtn").addEventListener("click", () => {
+  if (currentView === "topicReading") {
+    renderTopicsView();
+    showView("topics");
+  } else {
+    showView("read");
+  }
+});
 
 el("collapseBtn").addEventListener("click", () => {
   const collapsed = document.querySelector(".app-shell").classList.toggle("sidebar-collapsed");
@@ -140,6 +162,7 @@ if (localStorage.getItem("bible-study:sidebarCollapsed") === "1") {
 // ---------- Read view ----------
 
 function selectBook(bookId, chapter) {
+  stopReading();
   currentBookId = bookId;
   currentChapter = chapter || 1;
   renderReadView();
@@ -200,7 +223,7 @@ function buildVerseSpan(key, text, showNum, verseNum) {
   if (selection.has(key)) span.classList.add("selected");
 
   const entry = tagsData.verseTags[key];
-  const tagIds = effectiveTagIdsForKey(key);
+  const tagIds = (entry && entry.tagIds) || [];
   if (entry && entry.note) span.classList.add("has-note");
   if (tagIds.length) {
     span.classList.add("tagged");
@@ -321,6 +344,183 @@ function navigateChapter(delta) {
 
 el("prevChapterBtn").addEventListener("click", () => navigateChapter(-1));
 el("nextChapterBtn").addEventListener("click", () => navigateChapter(1));
+
+// ---------- Audio: read chapter aloud (Web Speech API) ----------
+//
+// Speaks one verse per SpeechSynthesisUtterance, chained via onend, rather
+// than one utterance for the whole chapter — this is what makes per-verse
+// highlighting and reliable pause/resume possible.
+
+const speechSupported = "speechSynthesis" in window;
+let speechQueue = []; // [{key, text}]
+let speechIndex = -1;
+let speechPlaying = false;
+let speechRate = Number(localStorage.getItem("bible-study:speechRate") || "1");
+let speechVoiceURI = localStorage.getItem("bible-study:speechVoiceURI") || "";
+let currentUtterance = null;
+
+function restartCurrentVerse() {
+  if (currentUtterance) {
+    currentUtterance.onend = null;
+    currentUtterance.onerror = null;
+  }
+  speechIndex--;
+  window.speechSynthesis.cancel();
+  speakNext();
+}
+
+function buildSpeechQueue() {
+  const book = booksById.get(currentBookId);
+  const chapter = book.chapters[currentChapter - 1];
+  return chapter.verses.map((text, i) => ({ key: verseKey(book.id, currentChapter, i + 1), text }));
+}
+
+function clearSpeechHighlight() {
+  document.querySelectorAll(".verse-inline.speech-active").forEach((s) => s.classList.remove("speech-active"));
+}
+
+function highlightSpeechVerse(key) {
+  const span = document.querySelector(`.verse-inline[data-key="${key}"]`);
+  if (!span) return;
+  span.classList.add("speech-active");
+  span.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+function getSelectedVoice() {
+  if (!speechVoiceURI) return null;
+  return window.speechSynthesis.getVoices().find((v) => v.voiceURI === speechVoiceURI) || null;
+}
+
+function speakNext() {
+  speechIndex++;
+  clearSpeechHighlight();
+  if (speechIndex >= speechQueue.length) {
+    stopReading();
+    return;
+  }
+  const { key, text } = speechQueue[speechIndex];
+  highlightSpeechVerse(key);
+  updateAudioControls();
+
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.rate = speechRate;
+  const voice = getSelectedVoice();
+  if (voice) utter.voice = voice;
+  utter.onend = () => {
+    if (speechPlaying) speakNext();
+  };
+  utter.onerror = () => {
+    if (speechPlaying) speakNext();
+  };
+  currentUtterance = utter;
+  window.speechSynthesis.speak(utter);
+}
+
+function startReading() {
+  if (!speechSupported) return;
+  window.speechSynthesis.cancel();
+  speechQueue = buildSpeechQueue();
+  speechIndex = -1;
+  speechPlaying = true;
+  updateAudioControls();
+  speakNext();
+}
+
+function pauseReading() {
+  if (!speechSupported || !speechPlaying) return;
+  window.speechSynthesis.pause();
+  speechPlaying = false;
+  updateAudioControls();
+}
+
+function resumeReading() {
+  if (!speechSupported || speechPlaying) return;
+  window.speechSynthesis.resume();
+  speechPlaying = true;
+  updateAudioControls();
+}
+
+function stopReading() {
+  if (!speechSupported) return;
+  window.speechSynthesis.cancel();
+  speechPlaying = false;
+  speechIndex = -1;
+  speechQueue = [];
+  clearSpeechHighlight();
+  updateAudioControls();
+}
+
+function updateAudioStatus() {
+  const status = el("audioStatus");
+  if (speechIndex >= 0 && speechIndex < speechQueue.length) {
+    status.textContent = `Verse ${speechIndex + 1} of ${speechQueue.length}`;
+  } else {
+    status.textContent = "";
+  }
+}
+
+function updateAudioControls() {
+  const playBtn = el("audioPlayBtn");
+  const playIcon = el("audioPlayIcon");
+  const stopBtn = el("audioStopBtn");
+  const active = speechIndex >= 0 && speechIndex < speechQueue.length;
+
+  playBtn.title = speechPlaying ? "Pause" : active ? "Resume reading" : "Read chapter aloud";
+  playIcon.innerHTML = speechPlaying
+    ? '<rect x="5" y="4" width="3" height="12" fill="currentColor"/><rect x="12" y="4" width="3" height="12" fill="currentColor"/>'
+    : '<path d="M6 4l10 6-10 6V4Z" fill="currentColor"/>';
+  stopBtn.classList.toggle("hidden", !active);
+  updateAudioStatus();
+}
+
+function populateVoiceSelect() {
+  if (!speechSupported) return;
+  const select = el("audioVoiceSelect");
+  const voices = window.speechSynthesis.getVoices().filter((v) => v.lang.startsWith("en"));
+  if (!voices.length) return;
+
+  select.innerHTML = "";
+  const defaultOpt = document.createElement("option");
+  defaultOpt.value = "";
+  defaultOpt.textContent = "Default voice";
+  select.appendChild(defaultOpt);
+  voices.forEach((v) => {
+    const opt = document.createElement("option");
+    opt.value = v.voiceURI;
+    opt.textContent = v.name;
+    select.appendChild(opt);
+  });
+  select.value = voices.some((v) => v.voiceURI === speechVoiceURI) ? speechVoiceURI : "";
+}
+
+if (speechSupported) {
+  el("audioPlayerBar").classList.remove("hidden");
+  populateVoiceSelect();
+  window.speechSynthesis.addEventListener("voiceschanged", populateVoiceSelect);
+
+  el("audioPlayBtn").addEventListener("click", () => {
+    if (speechPlaying) pauseReading();
+    else if (speechIndex >= 0 && speechIndex < speechQueue.length) resumeReading();
+    else startReading();
+  });
+
+  el("audioStopBtn").addEventListener("click", stopReading);
+
+  el("audioRateSelect").value = String(speechRate);
+  el("audioRateSelect").addEventListener("change", (e) => {
+    speechRate = Number(e.target.value);
+    localStorage.setItem("bible-study:speechRate", String(speechRate));
+    // Rate changes only take effect on the next utterance in most engines,
+    // so restart the current verse for an immediate, consistent result.
+    if (speechPlaying) restartCurrentVerse();
+  });
+
+  el("audioVoiceSelect").addEventListener("change", (e) => {
+    speechVoiceURI = e.target.value;
+    localStorage.setItem("bible-study:speechVoiceURI", speechVoiceURI);
+    if (speechPlaying) restartCurrentVerse();
+  });
+}
 
 // ---------- Book/chapter picker ----------
 
@@ -817,9 +1017,7 @@ function renderAutoTagsList() {
     `;
     row.addEventListener("click", (e) => {
       if (e.target.closest("button")) return;
-      activeTagFilter = tag.id;
-      showView("tags");
-      renderTagsView();
+      openTopicReading(tag.id);
     });
     const editBtn = document.createElement("button");
     editBtn.type = "button";
@@ -828,6 +1026,105 @@ function renderAutoTagsList() {
     editBtn.addEventListener("click", () => openNewTagModal({ editTagId: tag.id }));
     row.appendChild(editBtn);
     list.appendChild(row);
+  });
+}
+
+// ---------- Topic reading view ----------
+//
+// Auto-tags aren't manual tags — they're closer to a curated reading list
+// (Nave's topical entries, a Strong's word across the text, etc.) than to
+// something the user deliberately marked. So instead of dumping their
+// matches into the Tags page's card list with tag-colored highlighting,
+// clicking one opens a dedicated, continuous reading view: grouped passages
+// rendered with the same typography/interaction as the main reading view
+// (buildVerseSpan — which only colors *manually* assigned tags, so a verse
+// the user has also tagged by hand still shows that, just not the auto-tag
+// itself as a highlight).
+
+let topicReadingTagId = null;
+
+function groupConsecutiveVerses(keys) {
+  const entries = keys
+    .map((key) => ({ key, ...parseVerseKey(key) }))
+    .sort((a, b) => {
+      const oa = booksById.get(a.bookId)?.order ?? 0;
+      const ob = booksById.get(b.bookId)?.order ?? 0;
+      return oa - ob || a.chapter - b.chapter || a.verse - b.verse;
+    });
+
+  const groups = [];
+  entries.forEach(({ key, bookId, chapter, verse }) => {
+    const last = groups[groups.length - 1];
+    if (last && last.bookId === bookId && last.chapter === chapter && verse === last.endVerse + 1) {
+      last.endVerse = verse;
+      last.keys.push(key);
+    } else {
+      groups.push({ bookId, chapter, startVerse: verse, endVerse: verse, keys: [key] });
+    }
+  });
+  return groups;
+}
+
+function openTopicReading(tagId) {
+  topicReadingTagId = tagId;
+  renderTopicReading();
+  showView("topicReading");
+}
+
+function renderTopicReading() {
+  const tag = tagsData.tags.find((t) => t.id === topicReadingTagId);
+  const container = el("topicReadingContent");
+  if (!tag) {
+    container.innerHTML = "";
+    return;
+  }
+
+  el("topicReadingHeading").textContent = tag.name;
+  el("topicReadingDesc").textContent = ruleDescription(tag.rule);
+
+  const sets = getSmartTagSets();
+  const keys = sets ? [...(sets.get(tag.id) || [])] : [];
+  const groups = groupConsecutiveVerses(keys);
+
+  el("topicReadingCount").textContent = keys.length
+    ? `${keys.length} verse${keys.length === 1 ? "" : "s"} in ${groups.length} passage${groups.length === 1 ? "" : "s"}`
+    : "";
+
+  container.innerHTML = "";
+  if (!groups.length) {
+    container.innerHTML = '<div class="empty-msg">No verses found for this auto-tag yet.</div>';
+    return;
+  }
+
+  groups.forEach((group) => {
+    const book = booksById.get(group.bookId);
+    const chapters = Array.isArray(book.chapters) ? book.chapters : [book.chapters];
+    const refText =
+      group.startVerse === group.endVerse
+        ? refLabel(group.bookId, group.chapter, group.startVerse)
+        : `${refLabel(group.bookId, group.chapter, group.startVerse)}–${group.endVerse}`;
+
+    const section = document.createElement("div");
+    section.className = "topic-reading-passage";
+
+    const heading = document.createElement("button");
+    heading.type = "button";
+    heading.className = "topic-reading-ref";
+    heading.textContent = refText;
+    heading.addEventListener("click", () => goToVerseInChapter(group.keys));
+    section.appendChild(heading);
+
+    const para = document.createElement("p");
+    para.className = "topic-reading-para";
+    group.keys.forEach((key) => {
+      const { verse } = parseVerseKey(key);
+      const text = chapters[group.chapter - 1].verses[verse - 1];
+      para.appendChild(buildVerseSpan(key, text, true, verse));
+      para.appendChild(document.createTextNode(" "));
+    });
+    section.appendChild(para);
+
+    container.appendChild(section);
   });
 }
 
@@ -938,11 +1235,7 @@ function renderTagFilterBar() {
   bar.appendChild(allBtn);
 
   function tagCount(tag) {
-    const manualKeys = Object.entries(tagsData.verseTags)
-      .filter(([, e]) => e.tagIds.includes(tag.id))
-      .map(([k]) => k);
-    const smartKeys = getSmartTagSets()?.get(tag.id) || new Set();
-    return new Set([...manualKeys, ...smartKeys]).size;
+    return Object.values(tagsData.verseTags).filter((e) => e.tagIds.includes(tag.id)).length;
   }
 
   const manualTags = tagsData.tags.filter((t) => !isSmartTag(t));
@@ -958,17 +1251,6 @@ function renderTagFilterBar() {
   });
 
   // Auto-tags aren't listed as pills here (managed on the Topics page), but
-  // if we've drilled in from one via Topics, show it as an active pill so
-  // the filter state is legible rather than orphaned.
-  if (activeTagFilter && !manualTags.some((t) => t.id === activeTagFilter)) {
-    const autoTag = tagsData.tags.find((t) => t.id === activeTagFilter);
-    if (autoTag) {
-      const btn = document.createElement("button");
-      btn.className = "filter-pill active";
-      btn.textContent = `${autoTag.name} · ${tagCount(autoTag)}`;
-      bar.appendChild(btn);
-    }
-  }
 }
 
 function sameTagIds(a, b) {
@@ -981,17 +1263,8 @@ function renderTagVerseList() {
   const container = el("tagVerseList");
   container.innerHTML = "";
 
-  const keySet = new Set(Object.keys(tagsData.verseTags));
-  const smartSets = getSmartTagSets();
-  if (smartSets) {
-    smartSets.forEach((set, tagId) => {
-      if (activeTagFilter && tagId !== activeTagFilter) return;
-      set.forEach((k) => keySet.add(k));
-    });
-  }
-
-  let entries = [...keySet]
-    .filter((key) => (activeTagFilter ? effectiveTagIdsForKey(key).includes(activeTagFilter) : true))
+  let entries = Object.keys(tagsData.verseTags)
+    .filter((key) => (activeTagFilter ? (tagsData.verseTags[key].tagIds || []).includes(activeTagFilter) : true))
     .map((key) => ({ key, ...parseVerseKey(key) }))
     .sort((a, b) => {
       const oa = booksById.get(a.bookId)?.order ?? 0;
@@ -1012,7 +1285,7 @@ function renderTagVerseList() {
   const groups = [];
   entries.forEach(({ key, bookId, chapter, verse }) => {
     const note = tagsData.verseTags[key]?.note || "";
-    const tagIds = effectiveTagIdsForKey(key);
+    const tagIds = tagsData.verseTags[key]?.tagIds || [];
     const last = groups[groups.length - 1];
     if (
       last &&
@@ -1520,12 +1793,6 @@ function smartTagIdsForKey(key) {
     if (set.has(key)) ids.push(tagId);
   });
   return ids;
-}
-
-function effectiveTagIdsForKey(key) {
-  const manual = (tagsData.verseTags[key] && tagsData.verseTags[key].tagIds) || [];
-  const smart = smartTagIdsForKey(key);
-  return smart.length ? [...new Set([...manual, ...smart])] : manual;
 }
 
 function anySmartTagsDefined() {

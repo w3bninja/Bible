@@ -156,6 +156,17 @@ Three requested capabilities, all shipped:
 - **Saved search → Auto-Tag** — extends the `tag.rule` system with a fourth type, `{phrase: "...", phraseAnd?: "..."}`, computed live by scanning `bible.json` directly (no new data file needed — cheap enough at ~31k verses to run on demand, invalidated the same way as the other rule types). A "Save as Auto-Tag…" button on the search results page jumps to the Topics page with the current query pre-filled into a new auto-tag.
 - Real bug caught during verification: `clearSelection()` still referenced the pre-rename `lastSearchResults` variable after `runTextSearch`'s result state was split into `baseSearchResults` (literal matches) vs. the topic-merged display set — fixed before shipping.
 
+## Audio: read chapter aloud (2026-07-29)
+
+Added a "read chapter aloud" control to the reading view, using the browser's built-in Web Speech API (`speechSynthesis`) — zero cost, zero new dependencies, fits the app's static-site architecture. Speaks one verse per `SpeechSynthesisUtterance`, chained via `onend`, rather than one utterance for the whole chapter — that's what makes per-verse highlighting (reuses `.speech-active` on the same span the reading view already builds) and reliable pause/resume possible. Controls: play/pause, stop, rate (0.75×–2×), and a voice picker (populated from `speechSynthesis.getVoices()`, English voices only), both persisted to `localStorage`. Playback stops automatically on chapter navigation or leaving the reading view, so it can't keep talking over a chapter you've since left. Verified via state-machine checks (queue construction, highlight application, pause/resume/stop transitions, stop-on-navigate) — actual audio output isn't verifiable through automated tooling, so real listening confirmation is still worth doing.
+
+## Auto-tags moved out of the reading view (2026-07-29, post-ship revision)
+
+User feedback after using the Topics feature: auto-tags showing the same colored tag-dot highlighting as manual tags in the main reading view read as clutter — "Topics feel less like tags and more like a focused reading." Two changes:
+
+- `buildVerseSpan` (main reading view) reverted to manual tags only — auto-tags no longer render any inline highlighting there. `effectiveTagIdsForKey()` (the manual+smart merge helper) became dead code as a result and was removed; the Tags page's filter bar/verse list were simplified back to pure manual-tag logic too (dropped the "orphaned active pill" fallback for auto-tags, since auto-tags no longer route through the Tags page at all).
+- Clicking an auto-tag in "Your Auto-Tags" (Topics page) now opens a new dedicated **Topic Reading view** instead of landing on the Tags page's card list — consecutive verses grouped into passages and rendered with the main reading view's own typography and `buildVerseSpan` (so a verse the user *has* manually tagged still shows that — only the auto-tag itself is excluded from inline highlighting). Verse detail's smart-tag chips are unaffected (still shown there; it's an explicit detail view, not reading-flow clutter).
+
 ## Effort summary
 
 | Feature | Effort | Blocked on |

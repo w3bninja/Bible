@@ -58,6 +58,23 @@
           </button>
         </div>
         <div class="version-label">King James Version</div>
+        <div id="audioPlayerBar" class="audio-player-bar hidden">
+          <button type="button" id="audioPlayBtn" class="icon-btn-outline" title="Read chapter aloud">
+            <svg id="audioPlayIcon" viewBox="0 0 20 20" fill="none"><path d="M6 4l10 6-10 6V4Z" fill="currentColor"/></svg>
+          </button>
+          <button type="button" id="audioStopBtn" class="icon-btn-outline hidden" title="Stop reading">
+            <svg viewBox="0 0 20 20" fill="none"><rect x="5" y="5" width="10" height="10" rx="1.5" fill="currentColor"/></svg>
+          </button>
+          <select id="audioRateSelect" class="audio-select" title="Playback speed">
+            <option value="0.75">0.75×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.25">1.25×</option>
+            <option value="1.5">1.5×</option>
+            <option value="2">2×</option>
+          </select>
+          <select id="audioVoiceSelect" class="audio-select audio-voice-select" title="Voice"></select>
+          <span id="audioStatus" class="audio-status"></span>
+        </div>
         <div id="verses" class="chapter-flow"></div>
       </div>
 
@@ -101,6 +118,15 @@
           <div id="topicCategoryFilterBar" class="tag-filter-bar"></div>
           <div id="topicsBrowseList" class="topics-browse-list"></div>
         </div>
+      </div>
+
+      <div id="topicReadingView" class="view-content hidden">
+        <h1 class="page-heading" id="topicReadingHeading">Topic</h1>
+        <div class="topic-reading-meta">
+          <span id="topicReadingDesc"></span>
+          <span id="topicReadingCount"></span>
+        </div>
+        <div id="topicReadingContent" class="topic-reading-content"></div>
       </div>
 
       <div id="searchView" class="view-content hidden">
