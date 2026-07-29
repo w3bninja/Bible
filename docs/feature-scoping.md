@@ -89,14 +89,15 @@ e.g. "auto-tag any verse containing G26 with #AgapeLove."
 
 **Dependencies:** none — built on Tap-to-Study's Phase 0/1 concordance index, already shipped.
 
-### B1. Topic smart folders (Nave's Topical Bible / Treasury of Scripture Knowledge)
-**Effort: L**
+### B1. Topic smart folders (DONE, built 2026-07-29)
 
-- Both datasets are old enough to likely be public-domain, but need the same treatment as feature 2's data spike: pull a real file, confirm structure and license before scoping further.
-- Once sourced: static import (`data/topics.json: {topicId -> [verseKey,...]}`), same computed/non-destructive smart-tag rendering as 3A.
-- Independent of Strong's data — could proceed in parallel with Tap-to-Study's Phase 0 spike.
+- **Source: [`BradyStephenson/bible-data`](https://github.com/BradyStephenson/bible-data)**, `NavesTopicalDictionary.csv` — CC BY 4.0, confirmed via the actual LICENSE file. Attribution: Brady Stephenson, "BibleData: Structured Datasets from the Holy Bible" (Zenodo).
+- The source format needed real parsing, not a straight import: each of the 5,319 topic rows has a block of `-description BOOK C:V,V-V; BOOK C:V; C:V` sub-entry lines, mixing free-text descriptions with a trailing (sometimes book-omitting, sometimes chapter-omitting) reference list. [`scripts/import-topics.js`](../scripts/import-topics.js) locates the first recognized book token per line, treats everything from there onward as the reference zone, and parses semicolon-separated groups (each optionally starting a new book, always containing `chapter:verse-list`) with comma-separated verses/ranges within each group. Book abbreviations are normalized through a generous alias table since the source itself is inconsistent (both `JHN` and `JOHN` appear for John's Gospel).
+- Results: **4,665 of 5,319 topics (87.7%) resolved at least one verse**; 98.8% of individual reference groups parsed cleanly (59,235 parsed, 737 skipped as unparseable — logged, not silently dropped). All resolved verse references are validated against `data/bible.json`'s actual chapter/verse counts — 19 invalid references (e.g. `daniel 17:14`, a chapter that doesn't exist — a data error in the original Nave's text, not this import) were caught and dropped rather than shipped as dead links. Output: `data/topics.json` (2.77MB), same shape as feature 3A's concordance (`{topicName: [verseKey, ...]}`).
+- UI: generalized the smart-tag `rule` field to accept `{topic: "AARON"}` alongside `{strongs: "G26"}` — `getSmartTagSets()`, `effectiveTagIdsForKey()`, etc. now resolve either kind transparently. New tag creation (from the Tags view's "+ Add" flow, not the word-study panel) gained an optional "Auto-tag by topic" field with a native `<datalist>` autocomplete over all 4,665 topic names, lazy-loaded on first open. Added a confirmation prompt if toggling a Strong's-number rule from the word study panel would overwrite an existing topic rule on the same tag (rules are one-per-tag; silently clobbering felt like a real footgun).
+- Verified live: created a topic tag for "PARABLES" → the datalist offered all 4,665 topics → first matching verse (Judges 9:8, Jotham's parable of the trees — a real, correct match) picked up the tag dot immediately.
 
-**Dependencies:** its own data-source spike (not yet started).
+**Dependencies:** none — fully shipped.
 
 ### B2. Named entity recognition (people/places, e.g. tapping "David")
 **Effort: XL**, least defined
@@ -133,7 +134,7 @@ Feature 1's multi-select + bulk-tag-apply mechanism is a direct prerequisite for
 | 1. Search & Select Batch Tagging | **M** | ~~Nothing~~ **Done, shipped 2026-07-29** |
 | 3A. Strong's rule tagging | **Done** | Shipped 2026-07-29 |
 | 2. Tap-to-Study Word Study Sheet | **Done** | All phases shipped 2026-07-29 |
-| 3B1. Topic smart folders (Nave's/TSK) | **L** | Own data spike (not started) |
+| 3B1. Topic smart folders (Nave's) | **Done** | Shipped 2026-07-29 |
 | 3B2. Named-entity auto-tags | **XL** | Undefined — dataset existence unknown |
 | 3C. AI semantic tagging | **XL** | Infra/provider decision, not data |
 

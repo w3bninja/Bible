@@ -153,6 +153,10 @@
         <label>Name
           <input type="text" id="newTagName" required maxlength="30" placeholder="e.g. Faith" />
         </label>
+        <label id="newTagTopicRow">Auto-tag by topic (optional)
+          <input type="text" id="newTagTopic" list="topicsDatalist" placeholder="e.g. Parables of Jesus, Faith, Love" />
+          <datalist id="topicsDatalist"></datalist>
+        </label>
         <div class="hue-swatches" id="hueSwatches"></div>
         <div class="modal-actions">
           <button type="button" id="newTagCancel" class="btn btn-outline">Cancel</button>

@@ -73,7 +73,7 @@ async function init() {
 
     booksById = new Map(bible.books.map((b) => [b.id, b]));
 
-    if (anySmartTagsDefined()) await ensureConcordanceLoaded();
+    if (anySmartTagsDefined()) await loadAnyDefinedSmartTagSources();
 
     const last = JSON.parse(localStorage.getItem("bible-study:lastLocation") || "null");
     if (last && booksById.has(last.bookId)) {
@@ -632,8 +632,27 @@ let pendingSmartTagRule = null; // set to a Strong's number when the "+ new smar
 
 function openNewTagModal() {
   el("newTagName").value = "";
+  el("newTagTopic").value = "";
   selectedHue = HUE_PRESETS[Math.floor(Math.random() * HUE_PRESETS.length)];
   renderHueSwatches();
+
+  const showTopicField = !pendingSmartTagRule;
+  el("newTagTopicRow").classList.toggle("hidden", !showTopicField);
+  if (showTopicField) {
+    ensureTopicsLoaded().then(() => {
+      const datalist = el("topicsDatalist");
+      if (!datalist.childElementCount) {
+        Object.keys(topicsData)
+          .sort()
+          .forEach((name) => {
+            const opt = document.createElement("option");
+            opt.value = name;
+            datalist.appendChild(opt);
+          });
+      }
+    });
+  }
+
   el("newTagOverlay").classList.remove("hidden");
 }
 
@@ -671,6 +690,11 @@ el("newTagForm").addEventListener("submit", (e) => {
   const tag = { id: crypto.randomUUID(), name, hue: selectedHue };
   tagsData.tags.push(tag);
 
+  const topicInput = el("newTagTopic").value.trim();
+  const matchedTopic = !pendingSmartTagRule && topicInput
+    ? Object.keys(topicsData || {}).find((t) => t.toLowerCase() === topicInput.toLowerCase())
+    : null;
+
   if (pendingSmartTagRule) {
     tag.rule = { strongs: pendingSmartTagRule };
     pendingSmartTagRule = null;
@@ -682,6 +706,13 @@ el("newTagForm").addEventListener("submit", (e) => {
       if (currentView === "verse") renderVerseDetailTags();
       if (wordStudyConcNum) renderWordStudyCard(wordStudyConcNum, [wordStudyConcNum]);
     });
+  } else if (matchedTopic) {
+    tag.rule = { topic: matchedTopic };
+    invalidateSmartTagCache();
+    scheduleSave();
+    renderVerses();
+    if (currentView === "verse") renderVerseDetailTags();
+    if (currentView === "tags") renderTagsView();
   } else {
     toggleTagForKeys(tagAssignKeys, tag.id);
   }
@@ -1084,13 +1115,16 @@ function loadStrongsData() {
   return strongsDataPromise;
 }
 
-// ---------- Smart (Strong's-rule) tags ----------
+// ---------- Smart (rule-based) tags ----------
 //
-// A tag with a `rule: {strongs: "G26"}` field auto-applies to every verse
-// containing that Strong's number, computed live from the concordance index
-// rather than written into verseTags — so it never mutates saved verse data.
+// A tag with a `rule: {strongs: "G26"}` or `rule: {topic: "AARON"}` field
+// auto-applies to every matching verse, computed live from the concordance
+// or topics index rather than written into verseTags — so it never mutates
+// saved verse data.
 
 let concordanceOnlyPromise = null;
+let topicsData = null;
+let topicsPromise = null;
 let smartTagSetsCache = null; // Map<tagId, Set<verseKey>>
 
 function ensureConcordanceLoaded() {
@@ -1103,17 +1137,29 @@ function ensureConcordanceLoaded() {
   return concordanceOnlyPromise;
 }
 
+function ensureTopicsLoaded() {
+  if (topicsData) return Promise.resolve();
+  if (!topicsPromise) {
+    topicsPromise = fetchJSON("data/topics.json").then((t) => {
+      topicsData = t;
+    });
+  }
+  return topicsPromise;
+}
+
 function invalidateSmartTagCache() {
   smartTagSetsCache = null;
 }
 
 function getSmartTagSets() {
-  if (!strongsConcordance) return null;
+  if (!strongsConcordance && !topicsData) return null;
   if (!smartTagSetsCache) {
     smartTagSetsCache = new Map();
     tagsData.tags.forEach((tag) => {
-      if (tag.rule && tag.rule.strongs) {
+      if (tag.rule && tag.rule.strongs && strongsConcordance) {
         smartTagSetsCache.set(tag.id, new Set(strongsConcordance[tag.rule.strongs] || []));
+      } else if (tag.rule && tag.rule.topic && topicsData) {
+        smartTagSetsCache.set(tag.id, new Set(topicsData[tag.rule.topic] || []));
       }
     });
   }
@@ -1137,7 +1183,14 @@ function effectiveTagIdsForKey(key) {
 }
 
 function anySmartTagsDefined() {
-  return tagsData.tags.some((t) => t.rule && t.rule.strongs);
+  return tagsData.tags.some((t) => t.rule && (t.rule.strongs || t.rule.topic));
+}
+
+function loadAnyDefinedSmartTagSources() {
+  const jobs = [];
+  if (tagsData.tags.some((t) => t.rule && t.rule.strongs)) jobs.push(ensureConcordanceLoaded());
+  if (tagsData.tags.some((t) => t.rule && t.rule.topic)) jobs.push(ensureTopicsLoaded());
+  return Promise.all(jobs);
 }
 
 async function openWordStudyPanel(key) {
@@ -1363,6 +1416,10 @@ function renderSmartTagPills(num) {
       btn.style.borderColor = "transparent";
     }
     btn.addEventListener("click", () => {
+      if (!active && tag.rule && tag.rule.topic) {
+        const ok = confirm(`"${tag.name}" is already an auto-tag for the topic "${tag.rule.topic}". Switch it to auto-tag by this word instead?`);
+        if (!ok) return;
+      }
       tag.rule = active ? undefined : { strongs: num };
       invalidateSmartTagCache();
       scheduleSave();
