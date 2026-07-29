@@ -141,6 +141,12 @@ After 3A/3B1/3B2 shipped, real usage surfaced that auto-tags (rule-based) and ma
 - The word study panel's "Auto-tag this word…" button now jumps to the Topics page (was the Tags page) with the Strong's number pre-filled.
 - Strong's-number rules can now also be typed directly (e.g. `G26`) into the unified modal, not just reached by tapping a word — so all three rule types (Strong's, topic, person) are creatable from one place (the Topics page), while still supporting the word-study shortcut for convenience.
 
+### Browse Topics categorization (2026-07-29)
+
+4,665 flat, alphabetically-sorted topics was hard to navigate — and Nave's own "section" field turned out to be just an A-Z alphabetical grouping, not a thematic category, so it offered nothing beyond what sorting already gives. Rather than leave it flat, [`scripts/categorize-topics.js`](../scripts/categorize-topics.js) buckets every topic into **People** / **Places** / **Topics & Themes** by cross-referencing topic names against the person dataset (3B2) and a place dataset from the same source repo (`BibleData-Place.csv`, not previously pulled in). Results: 1,448 People, 63 Places, 3,154 Topics & Themes — written to `data/topic-categories.json`, surfaced as filter chips (with live counts) above the Browse Topics list.
+
+Known limitation, flagged to the user before building and accepted as-is: the place dataset only has 113 unique names, and person-name matching requires an exact match after stripping disambiguation suffixes, so some genuine people/places (e.g. "ABED-NEGO", the river "ABANA") fall through to "Topics & Themes" rather than their correct bucket. This is a real, useful, data-backed split, not a perfect taxonomy — a true thematic categorization (Christian Living, Prophecy, etc.) isn't available in any sourced dataset and would need manual curation or an AI classification pass, which was explicitly deferred.
+
 ## Effort summary
 
 | Feature | Effort | Blocked on |

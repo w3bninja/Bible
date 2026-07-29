@@ -832,15 +832,47 @@ document.querySelectorAll(".subnav-tab").forEach((tab) => {
 el("newAutoTagBtn").addEventListener("click", () => openNewTagModal());
 
 const TOPICS_BROWSE_CAP = 300;
+const TOPIC_CATEGORY_LABELS = { person: "People", place: "Places", topic: "Topics & Themes" };
+let topicsBrowseCategory = null; // null | 'person' | 'place' | 'topic'
+
+function renderTopicCategoryFilterBar() {
+  const bar = el("topicCategoryFilterBar");
+  bar.innerHTML = "";
+
+  const counts = { person: 0, place: 0, topic: 0 };
+  Object.values(topicCategories).forEach((c) => counts[c]++);
+
+  const makePill = (label, active, onClick) => {
+    const btn = document.createElement("button");
+    btn.className = "filter-pill" + (active ? " active" : "");
+    btn.textContent = label;
+    btn.addEventListener("click", onClick);
+    bar.appendChild(btn);
+  };
+
+  makePill("All", topicsBrowseCategory === null, () => {
+    topicsBrowseCategory = null;
+    renderTopicsBrowseList(el("topicsSearchInput").value);
+  });
+  Object.entries(TOPIC_CATEGORY_LABELS).forEach(([key, label]) => {
+    makePill(`${label} · ${counts[key]}`, topicsBrowseCategory === key, () => {
+      topicsBrowseCategory = topicsBrowseCategory === key ? null : key;
+      renderTopicsBrowseList(el("topicsSearchInput").value);
+    });
+  });
+}
 
 function renderTopicsBrowseList(query) {
   const container = el("topicsBrowseList");
   container.innerHTML = '<div class="empty-msg">Loading topics…</div>';
 
-  ensureTopicsLoaded().then(() => {
+  Promise.all([ensureTopicsLoaded(), ensureTopicCategoriesLoaded()]).then(() => {
+    renderTopicCategoryFilterBar();
+
     const q = (query || "").trim().toLowerCase();
     const names = Object.keys(topicsData)
       .filter((n) => !q || n.toLowerCase().includes(q))
+      .filter((n) => !topicsBrowseCategory || topicCategories[n] === topicsBrowseCategory)
       .sort();
 
     container.innerHTML = "";
@@ -1291,6 +1323,8 @@ function loadStrongsData() {
 let concordanceOnlyPromise = null;
 let topicsData = null;
 let topicsPromise = null;
+let topicCategories = null; // { topicName: "person" | "place" | "topic" }
+let topicCategoriesPromise = null;
 let personsData = null;
 let personsPromise = null;
 let smartTagSetsCache = null; // Map<tagId, Set<verseKey>>
@@ -1313,6 +1347,16 @@ function ensureTopicsLoaded() {
     });
   }
   return topicsPromise;
+}
+
+function ensureTopicCategoriesLoaded() {
+  if (topicCategories) return Promise.resolve();
+  if (!topicCategoriesPromise) {
+    topicCategoriesPromise = fetchJSON("data/topic-categories.json").then((c) => {
+      topicCategories = c;
+    });
+  }
+  return topicCategoriesPromise;
 }
 
 function ensurePersonsLoaded() {
