@@ -104,12 +104,20 @@
       </div>
 
       <div id="searchView" class="view-content hidden">
-        <input id="searchInput" type="search" class="search-input" placeholder="Search verses or tags…" />
+        <div class="search-inputs-row">
+          <input id="searchInput" type="search" class="search-input" placeholder="Search verses or tags…" />
+          <span class="search-and-label">AND</span>
+          <input id="searchAndInput" type="search" class="search-input search-and-input" placeholder="Optional second word…" />
+        </div>
         <div id="searchEmptyHint" class="search-hint">Try &ldquo;peace&rdquo;, &ldquo;comfort&rdquo;, or a reference like John 3:16.</div>
         <h1 class="page-heading hidden" id="searchHeading">Search results</h1>
+        <div id="searchSynonymBanner" class="search-synonym-banner hidden"></div>
         <div id="searchToolbar" class="search-toolbar hidden">
           <div id="searchFilterBar" class="tag-filter-bar"></div>
-          <button id="searchSelectAllBtn" type="button" class="btn btn-outline btn-small">Select all</button>
+          <div class="search-toolbar-actions">
+            <button id="searchSaveAutoTagBtn" type="button" class="btn btn-outline btn-small">Save as Auto-Tag…</button>
+            <button id="searchSelectAllBtn" type="button" class="btn btn-outline btn-small">Select all</button>
+          </div>
         </div>
         <div id="searchResults" class="verse-card-list"></div>
       </div>
@@ -192,6 +200,12 @@
         <label id="newTagPersonRow">Auto-tag by person (optional)
           <input type="text" id="newTagPerson" list="personsDatalist" placeholder="e.g. David, Paul, Mary (sister of Martha)" />
           <datalist id="personsDatalist"></datalist>
+        </label>
+        <label id="newTagPhraseRow">Auto-tag by phrase (optional)
+          <input type="text" id="newTagPhrase" placeholder="e.g. kingdom of heaven" />
+        </label>
+        <label id="newTagPhraseAndRow">…AND this word too (optional)
+          <input type="text" id="newTagPhraseAnd" placeholder="e.g. command" />
         </label>
         <div class="hue-swatches" id="hueSwatches"></div>
         <div class="modal-actions">

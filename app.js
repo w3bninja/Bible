@@ -16,7 +16,10 @@ let selection = new Set();
 let lastClickedKey = null;
 
 let lastSearchQuery = "";
-let lastSearchResults = []; // [{bookId, chapter, verse, text}]
+let lastSearchAndQuery = "";
+let baseSearchResults = []; // [{bookId, chapter, verse, text}] — literal text matches only
+let matchedSynonymTopic = null; // topic name if the query exactly matches a Nave's topic
+let topicSynonymIncluded = false;
 let searchTestamentFilter = null; // null | 'OT' | 'NT'
 let searchBookFilter = null; // null | bookId
 
@@ -260,7 +263,7 @@ function clearSelection() {
   lastClickedKey = null;
   applySelectionClasses();
   updateSelectionBar();
-  if (currentView === "search" && lastSearchResults.length) renderSearchResults();
+  if (currentView === "search" && baseSearchResults.length) renderSearchResults();
 }
 
 function updateSelectionBar() {
@@ -664,12 +667,16 @@ function openNewTagModal(opts = {}) {
   el("newTagStrongs").value = opts.strongs || (tag && tag.rule && tag.rule.strongs) || "";
   el("newTagTopic").value = opts.topic || (tag && tag.rule && tag.rule.topic) || "";
   el("newTagPerson").value = (tag && tag.rule && tag.rule.person) || "";
+  el("newTagPhrase").value = opts.phrase || (tag && tag.rule && tag.rule.phrase) || "";
+  el("newTagPhraseAnd").value = opts.phraseAnd || (tag && tag.rule && tag.rule.phraseAnd) || "";
   selectedHue = tag ? tag.hue : HUE_PRESETS[Math.floor(Math.random() * HUE_PRESETS.length)];
   renderHueSwatches();
 
   el("newTagStrongsRow").classList.toggle("hidden", manualOnly);
   el("newTagTopicRow").classList.toggle("hidden", manualOnly);
   el("newTagPersonRow").classList.toggle("hidden", manualOnly);
+  el("newTagPhraseRow").classList.toggle("hidden", manualOnly);
+  el("newTagPhraseAndRow").classList.toggle("hidden", manualOnly);
 
   if (!manualOnly) {
     ensureTopicsLoaded().then(() => populateDatalist("topicsDatalist", Object.keys(topicsData)));
@@ -715,6 +722,8 @@ el("newTagForm").addEventListener("submit", (e) => {
   const strongsInput = el("newTagStrongs").value.trim().toUpperCase();
   const topicInput = el("newTagTopic").value.trim();
   const personInput = el("newTagPerson").value.trim();
+  const phraseInput = el("newTagPhrase").value.trim();
+  const phraseAndInput = el("newTagPhraseAnd").value.trim();
 
   let rule = null;
   if (strongsInput && /^[GH]\d+$/.test(strongsInput)) {
@@ -725,6 +734,9 @@ el("newTagForm").addEventListener("submit", (e) => {
   } else if (personInput) {
     const matched = Object.keys(personsData || {}).find((p) => p.toLowerCase() === personInput.toLowerCase());
     if (matched) rule = { person: matched };
+  } else if (phraseInput) {
+    rule = { phrase: phraseInput };
+    if (phraseAndInput) rule.phraseAnd = phraseAndInput;
   }
 
   let tag;
@@ -775,6 +787,7 @@ function ruleDescription(rule) {
   if (rule.strongs) return `Strong's ${rule.strongs}`;
   if (rule.topic) return `Topic: ${rule.topic}`;
   if (rule.person) return `Person: ${rule.person}`;
+  if (rule.phrase) return `Phrase: "${rule.phrase}"${rule.phraseAnd ? ` AND "${rule.phraseAnd}"` : ""}`;
   return "";
 }
 
@@ -1078,11 +1091,15 @@ function renderTagVerseList() {
 
 el("searchToggleBtn").addEventListener("click", () => {
   el("searchInput").value = "";
+  el("searchAndInput").value = "";
   el("searchHeading").classList.add("hidden");
   el("searchEmptyHint").classList.remove("hidden");
   el("searchToolbar").classList.add("hidden");
+  el("searchSynonymBanner").classList.add("hidden");
   el("searchResults").innerHTML = "";
-  lastSearchResults = [];
+  baseSearchResults = [];
+  matchedSynonymTopic = null;
+  topicSynonymIncluded = false;
   searchTestamentFilter = null;
   searchBookFilter = null;
   clearSelection();
@@ -1100,29 +1117,35 @@ function findBookByName(query) {
   return bible.books.find((b) => b.name.toLowerCase().includes(q));
 }
 
-el("searchInput").addEventListener("keydown", (e) => {
+function handleSearchEnter(e) {
   if (e.key !== "Enter") return;
   const query = el("searchInput").value.trim();
   if (!query) return;
+  const andQuery = el("searchAndInput").value.trim();
 
-  const refMatch = query.match(/^(.+?)\s+(\d+)(?::(\d+))?$/);
-  if (refMatch) {
-    const [, bookQuery, chapterStr, verseStr] = refMatch;
-    const book = findBookByName(bookQuery);
-    if (book) {
-      const chapter = Math.min(Math.max(1, Number(chapterStr)), book.chapters.length);
-      selectBook(book.id, chapter);
-      if (verseStr) {
-        const v = Number(verseStr);
-        const text = book.chapters[chapter - 1].verses[v - 1];
-        if (text) openVerseDetail(verseKey(book.id, chapter, v));
+  if (!andQuery) {
+    const refMatch = query.match(/^(.+?)\s+(\d+)(?::(\d+))?$/);
+    if (refMatch) {
+      const [, bookQuery, chapterStr, verseStr] = refMatch;
+      const book = findBookByName(bookQuery);
+      if (book) {
+        const chapter = Math.min(Math.max(1, Number(chapterStr)), book.chapters.length);
+        selectBook(book.id, chapter);
+        if (verseStr) {
+          const v = Number(verseStr);
+          const text = book.chapters[chapter - 1].verses[v - 1];
+          if (text) openVerseDetail(verseKey(book.id, chapter, v));
+        }
+        return;
       }
-      return;
     }
   }
 
-  runTextSearch(query);
-});
+  runTextSearch(query, andQuery);
+}
+
+el("searchInput").addEventListener("keydown", handleSearchEnter);
+el("searchAndInput").addEventListener("keydown", handleSearchEnter);
 
 function escapeRegExp(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -1130,16 +1153,19 @@ function escapeRegExp(str) {
 
 const SEARCH_RESULT_CAP = 1000;
 
-function runTextSearch(query) {
+function runTextSearch(query, andQuery) {
   const q = query.toLowerCase();
+  const q2 = (andQuery || "").toLowerCase();
   const results = [];
 
   outer:
   for (const book of bible.books) {
-    for (let c = 0; c < book.chapters.length; c++) {
-      const chapterVerses = book.chapters[c].verses;
+    const chapters = Array.isArray(book.chapters) ? book.chapters : [book.chapters];
+    for (let c = 0; c < chapters.length; c++) {
+      const chapterVerses = chapters[c].verses;
       for (let v = 0; v < chapterVerses.length; v++) {
-        if (chapterVerses[v].toLowerCase().includes(q)) {
+        const lower = chapterVerses[v].toLowerCase();
+        if (lower.includes(q) && (!q2 || lower.includes(q2))) {
           results.push({ bookId: book.id, chapter: c + 1, verse: v + 1, text: chapterVerses[v] });
           if (results.length >= SEARCH_RESULT_CAP) break outer;
         }
@@ -1148,20 +1174,50 @@ function runTextSearch(query) {
   }
 
   lastSearchQuery = query;
-  lastSearchResults = results;
+  lastSearchAndQuery = andQuery || "";
+  baseSearchResults = results;
+  matchedSynonymTopic = null;
+  topicSynonymIncluded = false;
   searchTestamentFilter = null;
   searchBookFilter = null;
   clearSelection();
 
   el("searchEmptyHint").classList.add("hidden");
   el("searchHeading").classList.remove("hidden");
+  el("searchSynonymBanner").classList.add("hidden");
 
   renderSearchResults();
   showView("search");
+
+  // A synonym/topic suggestion only makes sense for a single-term search.
+  if (!lastSearchAndQuery) {
+    ensureTopicsLoaded().then(() => {
+      const upper = query.trim().toUpperCase();
+      if (topicsData[upper] && topicsData[upper].length) {
+        matchedSynonymTopic = upper;
+        renderSearchResults();
+      }
+    });
+  }
+}
+
+function currentSearchResultSet() {
+  if (!topicSynonymIncluded || !matchedSynonymTopic) return baseSearchResults;
+  const existingKeys = new Set(baseSearchResults.map((r) => verseKey(r.bookId, r.chapter, r.verse)));
+  const extra = (topicsData[matchedSynonymTopic] || [])
+    .filter((k) => !existingKeys.has(k))
+    .map((k) => {
+      const { bookId, chapter, verse } = parseVerseKey(k);
+      const book = booksById.get(bookId);
+      const chapters = Array.isArray(book.chapters) ? book.chapters : [book.chapters];
+      const text = chapters[chapter - 1].verses[verse - 1];
+      return { bookId, chapter, verse, text, viaTopic: true };
+    });
+  return [...baseSearchResults, ...extra];
 }
 
 function filteredSearchResults() {
-  return lastSearchResults.filter((r) => {
+  return currentSearchResultSet().filter((r) => {
     if (searchTestamentFilter && booksById.get(r.bookId)?.testament !== searchTestamentFilter) return false;
     if (searchBookFilter && r.bookId !== searchBookFilter) return false;
     return true;
@@ -1171,6 +1227,7 @@ function filteredSearchResults() {
 function renderSearchFilterBar(filtered) {
   const bar = el("searchFilterBar");
   bar.innerHTML = "";
+  const all = currentSearchResultSet();
 
   const makePill = (label, active, onClick) => {
     const btn = document.createElement("button");
@@ -1196,10 +1253,10 @@ function renderSearchFilterBar(filtered) {
     renderSearchResults();
   });
 
-  const booksInScope = (searchTestamentFilter
-    ? lastSearchResults.filter((r) => booksById.get(r.bookId)?.testament === searchTestamentFilter)
-    : lastSearchResults
-  ).reduce((set, r) => set.add(r.bookId), new Set());
+  const booksInScope = (searchTestamentFilter ? all.filter((r) => booksById.get(r.bookId)?.testament === searchTestamentFilter) : all).reduce(
+    (set, r) => set.add(r.bookId),
+    new Set()
+  );
 
   if (booksInScope.size > 1) {
     [...booksInScope]
@@ -1215,33 +1272,70 @@ function renderSearchFilterBar(filtered) {
   }
 }
 
+function renderSynonymBanner() {
+  const banner = el("searchSynonymBanner");
+  if (!matchedSynonymTopic) {
+    banner.classList.add("hidden");
+    return;
+  }
+  const count = (topicsData[matchedSynonymTopic] || []).length;
+  banner.classList.remove("hidden");
+  banner.innerHTML = "";
+
+  const label = document.createElement("span");
+  label.textContent = topicSynonymIncluded
+    ? `Including ${count} verses from the topic "${matchedSynonymTopic}" (related words like synonyms, not just the literal text).`
+    : `This also matches Nave's topic "${matchedSynonymTopic}" (${count} verses, including related words/synonyms) — not shown yet.`;
+  banner.appendChild(label);
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn btn-outline btn-small";
+  btn.textContent = topicSynonymIncluded ? "Remove topic verses" : "Include topic verses";
+  btn.addEventListener("click", () => {
+    topicSynonymIncluded = !topicSynonymIncluded;
+    renderSearchResults();
+  });
+  banner.appendChild(btn);
+}
+
 function renderSearchResults() {
   const filtered = filteredSearchResults();
+  const all = currentSearchResultSet();
 
-  const capSuffix = lastSearchResults.length >= SEARCH_RESULT_CAP ? "+" : "";
+  const capSuffix = baseSearchResults.length >= SEARCH_RESULT_CAP ? "+" : "";
+  const andLabel = lastSearchAndQuery ? ` AND "${lastSearchAndQuery}"` : "";
   el("searchHeading").textContent =
-    `Search results for "${lastSearchQuery}" (${filtered.length}${filtered.length !== lastSearchResults.length ? ` of ${lastSearchResults.length}${capSuffix}` : capSuffix})`;
+    `Search results for "${lastSearchQuery}"${andLabel} (${filtered.length}${filtered.length !== all.length ? ` of ${all.length}${capSuffix}` : capSuffix})`;
 
-  el("searchToolbar").classList.toggle("hidden", lastSearchResults.length === 0);
+  el("searchToolbar").classList.toggle("hidden", all.length === 0);
+  renderSynonymBanner();
   renderSearchFilterBar(filtered);
 
   const allSelected = filtered.length > 0 && filtered.every((r) => selection.has(verseKey(r.bookId, r.chapter, r.verse)));
   const selectAllBtn = el("searchSelectAllBtn");
   selectAllBtn.textContent = allSelected ? "Deselect all" : "Select all";
   selectAllBtn.disabled = filtered.length === 0;
+  el("searchSaveAutoTagBtn").classList.toggle("hidden", baseSearchResults.length === 0);
 
   const container = el("searchResults");
   container.innerHTML = "";
   if (filtered.length === 0) {
-    container.innerHTML = `<div class="empty-msg">${lastSearchResults.length === 0 ? "No matches found." : "No matches in this filter."}</div>`;
+    container.innerHTML = `<div class="empty-msg">${all.length === 0 ? "No matches found." : "No matches in this filter."}</div>`;
     return;
   }
 
-  filtered.forEach(({ bookId, chapter, verse, text }) => {
+  filtered.forEach(({ bookId, chapter, verse, text, viaTopic }) => {
     const key = verseKey(bookId, chapter, verse);
     const card = document.createElement("div");
     card.className = "verse-card card-checkbox-row";
-    const highlighted = escapeHtml(text).replace(new RegExp(escapeRegExp(escapeHtml(lastSearchQuery)), "ig"), (m) => `<mark>${m}</mark>`);
+    let highlighted = escapeHtml(text);
+    if (!viaTopic) {
+      highlighted = highlighted.replace(new RegExp(escapeRegExp(escapeHtml(lastSearchQuery)), "ig"), (m) => `<mark>${m}</mark>`);
+      if (lastSearchAndQuery) {
+        highlighted = highlighted.replace(new RegExp(escapeRegExp(escapeHtml(lastSearchAndQuery)), "ig"), (m) => `<mark>${m}</mark>`);
+      }
+    }
 
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
@@ -1260,7 +1354,7 @@ function renderSearchResults() {
     const body = document.createElement("div");
     body.className = "card-body";
     body.innerHTML = `
-      <div class="card-ref">${refLabel(bookId, chapter, verse)}</div>
+      <div class="card-ref">${refLabel(bookId, chapter, verse)}${viaTopic ? ' <span class="via-topic-badge">via topic</span>' : ""}</div>
       <div class="card-text">${highlighted}</div>
     `;
     body.addEventListener("click", () => openVerseDetail(key));
@@ -1280,6 +1374,12 @@ el("searchSelectAllBtn").addEventListener("click", () => {
   });
   updateSelectionBar();
   renderSearchResults();
+});
+
+el("searchSaveAutoTagBtn").addEventListener("click", () => {
+  showView("topics");
+  renderTopicsView();
+  openNewTagModal({ phrase: lastSearchQuery, phraseAnd: lastSearchAndQuery, name: lastSearchQuery });
 });
 
 // ---------- Word study panel ----------
@@ -1373,8 +1473,28 @@ function invalidateSmartTagCache() {
   smartTagSetsCache = null;
 }
 
+function versesMatchingPhrase(phrase, phraseAnd) {
+  const q = (phrase || "").trim().toLowerCase();
+  const q2 = (phraseAnd || "").trim().toLowerCase();
+  if (!q) return [];
+  const keys = [];
+  bible.books.forEach((book) => {
+    const chapters = Array.isArray(book.chapters) ? book.chapters : [book.chapters];
+    chapters.forEach((chapter, ci) => {
+      chapter.verses.forEach((text, vi) => {
+        const lower = text.toLowerCase();
+        if (lower.includes(q) && (!q2 || lower.includes(q2))) {
+          keys.push(`${book.id}-${ci + 1}-${vi + 1}`);
+        }
+      });
+    });
+  });
+  return keys;
+}
+
 function getSmartTagSets() {
-  if (!strongsConcordance && !topicsData && !personsData) return null;
+  const anyRule = tagsData.tags.some((t) => t.rule);
+  if (!anyRule) return null;
   if (!smartTagSetsCache) {
     smartTagSetsCache = new Map();
     tagsData.tags.forEach((tag) => {
@@ -1384,6 +1504,8 @@ function getSmartTagSets() {
         smartTagSetsCache.set(tag.id, new Set(topicsData[tag.rule.topic] || []));
       } else if (tag.rule && tag.rule.person && personsData) {
         smartTagSetsCache.set(tag.id, new Set(personsData[tag.rule.person] || []));
+      } else if (tag.rule && tag.rule.phrase) {
+        smartTagSetsCache.set(tag.id, new Set(versesMatchingPhrase(tag.rule.phrase, tag.rule.phraseAnd)));
       }
     });
   }

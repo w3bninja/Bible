@@ -147,6 +147,15 @@ After 3A/3B1/3B2 shipped, real usage surfaced that auto-tags (rule-based) and ma
 
 Known limitation, flagged to the user before building and accepted as-is: the place dataset only has 113 unique names, and person-name matching requires an exact match after stripping disambiguation suffixes, so some genuine people/places (e.g. "ABED-NEGO", the river "ABANA") fall through to "Topics & Themes" rather than their correct bucket. This is a real, useful, data-backed split, not a perfect taxonomy — a true thematic categorization (Christian Living, Prophecy, etc.) isn't available in any sourced dataset and would need manual curation or an AI classification pass, which was explicitly deferred.
 
+## Smart search: synonyms, proximity, saved rules (2026-07-29)
+
+Three requested capabilities, all shipped:
+
+- **Synonym/semantic expansion** — rather than sourcing a new English thesaurus (generic synonym lists don't capture biblical nuance, e.g. "peace" vs "rest" are different Hebrew roots entirely but thematically related), this reuses Nave's Topical Bible data already in the app (3B1). If the search query exactly matches a topic name, a banner offers to include that topic's verses (curated, related-word matches) alongside the literal text matches, clearly marked "via topic" on each card so it's not confused with a literal match.
+- **Proximity/AND search** — a second "AND" input field next to the main search box (chosen over inline `term AND term` syntax, to avoid a syntax users would need to discover). Matches verses containing both terms as substrings, independent of order or position within the verse.
+- **Saved search → Auto-Tag** — extends the `tag.rule` system with a fourth type, `{phrase: "...", phraseAnd?: "..."}`, computed live by scanning `bible.json` directly (no new data file needed — cheap enough at ~31k verses to run on demand, invalidated the same way as the other rule types). A "Save as Auto-Tag…" button on the search results page jumps to the Topics page with the current query pre-filled into a new auto-tag.
+- Real bug caught during verification: `clearSelection()` still referenced the pre-rename `lastSearchResults` variable after `runTextSearch`'s result state was split into `baseSearchResults` (literal matches) vs. the topic-merged display set — fixed before shipping.
+
 ## Effort summary
 
 | Feature | Effort | Blocked on |
