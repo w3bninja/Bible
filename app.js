@@ -118,6 +118,7 @@ function showView(view) {
   el("tagsView").classList.toggle("hidden", view !== "tags");
   el("topicsView").classList.toggle("hidden", view !== "topics");
   el("topicReadingView").classList.toggle("hidden", view !== "topicReading");
+  el("settingsView").classList.toggle("hidden", view !== "settings");
   el("searchView").classList.toggle("hidden", view !== "search");
 
   const showBack = view === "verse" || view === "search" || view === "topicReading";
@@ -130,6 +131,7 @@ function showView(view) {
     tags: "Your tagged verses",
     topics: "Auto-tags & topics",
     topicReading: "Topic reading",
+    settings: "Settings",
     search: "Search",
   };
   el("breadcrumb").textContent = breadcrumbs[view] || "";
@@ -155,6 +157,8 @@ document.querySelectorAll(".nav-item").forEach((item) => {
     } else if (item.dataset.view === "topics") {
       renderTopicsView();
       showView("topics");
+    } else if (item.dataset.view === "settings") {
+      showView("settings");
     }
   });
 });
