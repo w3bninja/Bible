@@ -1730,6 +1730,127 @@ el("exportDownloadBtn").addEventListener("click", () => {
   el("exportOverlay").classList.add("hidden");
 });
 
+// ---------- Bulk import (paste references, then bulk-tag) ----------
+//
+// Reference parsing only — the actual "apply a tag to N verses" step reuses
+// the existing tag-assign modal (openTagAssign), the same mechanism as
+// search-and-select and everywhere else in the app that bulk-tags verses.
+
+let bulkImportResolvedKeys = [];
+
+function chapterVerseCountFor(book, chapter) {
+  const chapters = Array.isArray(book.chapters) ? book.chapters : [book.chapters];
+  const ch = chapters[chapter - 1];
+  return ch ? ch.verses.length : 0;
+}
+
+// Splits pasted text into individual reference entries (newline/semicolon =
+// unambiguous new reference), then within each entry, comma-separated
+// segments either extend the previous book+chapter with more verses/ranges
+// ("John 3:16,18,20") or — if a segment doesn't parse as a bare number/range
+// — start a fresh full reference ("John 3:16, Romans 8:28").
+function parseBulkReferences(text) {
+  const resolvedKeys = [];
+  const seen = new Set();
+  const unresolved = [];
+
+  const addKey = (book, chapter, verse, label) => {
+    if (verse < 1 || verse > chapterVerseCountFor(book, chapter)) {
+      unresolved.push(`${label} (no such verse)`);
+      return;
+    }
+    const key = verseKey(book.id, chapter, verse);
+    if (!seen.has(key)) {
+      seen.add(key);
+      resolvedKeys.push(key);
+    }
+  };
+
+  const rawEntries = text
+    .split(/[\n;]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  rawEntries.forEach((entry) => {
+    const segments = entry
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    let currentBook = null;
+    let currentChapter = null;
+
+    segments.forEach((segment, idx) => {
+      const bareMatch = segment.match(/^(\d+)(?:-(\d+))?$/);
+      if (idx > 0 && currentBook && bareMatch) {
+        const lo = Number(bareMatch[1]);
+        const hi = bareMatch[2] ? Number(bareMatch[2]) : lo;
+        for (let v = lo; v <= hi; v++) addKey(currentBook, currentChapter, v, `${currentBook.name} ${currentChapter}:${v}`);
+        return;
+      }
+
+      const fullMatch = segment.match(/^(.+?)\s+(\d+)(?::(\d+)(?:-(\d+))?)?$/);
+      if (fullMatch) {
+        const [, bookQuery, chapterStr, verseStr, verseEndStr] = fullMatch;
+        const book = findBookByName(bookQuery);
+        if (book) {
+          currentBook = book;
+          currentChapter = Number(chapterStr);
+          if (verseStr) {
+            const lo = Number(verseStr);
+            const hi = verseEndStr ? Number(verseEndStr) : lo;
+            for (let v = lo; v <= hi; v++) addKey(book, currentChapter, v, `${book.name} ${currentChapter}:${v}`);
+          } else {
+            const count = chapterVerseCountFor(book, currentChapter);
+            for (let v = 1; v <= count; v++) addKey(book, currentChapter, v, `${book.name} ${currentChapter}`);
+          }
+          return;
+        }
+      }
+
+      unresolved.push(segment);
+    });
+  });
+
+  return { resolvedKeys, unresolved };
+}
+
+el("bulkImportBtn").addEventListener("click", () => {
+  el("bulkImportInput").value = "";
+  el("bulkImportPreview").classList.add("hidden");
+  el("bulkImportContinueBtn").classList.add("hidden");
+  bulkImportResolvedKeys = [];
+  el("bulkImportOverlay").classList.remove("hidden");
+  el("bulkImportInput").focus();
+});
+
+el("bulkImportCancelBtn").addEventListener("click", () => el("bulkImportOverlay").classList.add("hidden"));
+
+el("bulkImportParseBtn").addEventListener("click", () => {
+  const { resolvedKeys, unresolved } = parseBulkReferences(el("bulkImportInput").value);
+  bulkImportResolvedKeys = resolvedKeys;
+
+  el("bulkImportPreview").classList.remove("hidden");
+  el("bulkImportSummary").textContent = `${resolvedKeys.length} verse${resolvedKeys.length === 1 ? "" : "s"} resolved${
+    unresolved.length ? `, ${unresolved.length} not recognized` : ""
+  }.`;
+
+  const unresolvedEl = el("bulkImportUnresolved");
+  unresolvedEl.innerHTML = "";
+  unresolved.forEach((u) => {
+    const div = document.createElement("div");
+    div.textContent = `Couldn't resolve: "${u}"`;
+    unresolvedEl.appendChild(div);
+  });
+
+  el("bulkImportContinueBtn").classList.toggle("hidden", resolvedKeys.length === 0);
+});
+
+el("bulkImportContinueBtn").addEventListener("click", () => {
+  el("bulkImportOverlay").classList.add("hidden");
+  openTagAssign(bulkImportResolvedKeys, true);
+});
+
 // ---------- Insights: tag/note density heatmap ----------
 //
 // Counts only manual tags/notes (every key present in tagsData.verseTags is

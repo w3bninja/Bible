@@ -748,6 +748,37 @@ textarea, input {
 
 .share-header { margin-bottom: 28px; }
 
+.bulk-import-modal { max-width: 480px; }
+
+#bulkImportInput {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  color: var(--text-primary);
+  resize: vertical;
+  margin: 4px 0 12px;
+}
+
+.bulk-import-preview { margin-bottom: 12px; }
+
+.bulk-import-summary {
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.bulk-import-unresolved {
+  font-size: 12px;
+  color: var(--text-muted);
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.bulk-import-unresolved div { padding: 2px 0; }
+
 .tags-page-header {
   display: flex;
   align-items: center;

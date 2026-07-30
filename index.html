@@ -93,6 +93,7 @@
         <div class="tags-page-header">
           <h1 class="page-heading">Tags</h1>
           <div class="tags-page-header-actions">
+            <button type="button" id="bulkImportBtn" class="btn btn-outline btn-small">Bulk import…</button>
             <button type="button" id="newTagPageBtn" class="btn btn-accent-solid btn-small">+ New Tag</button>
           </div>
         </div>
@@ -339,6 +340,23 @@
       <div class="modal-actions">
         <button type="button" id="exportCancelBtn" class="btn btn-outline">Cancel</button>
         <button type="button" id="exportDownloadBtn" class="btn btn-accent-solid">Download</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="bulkImportOverlay" class="modal-overlay hidden">
+    <div class="modal bulk-import-modal">
+      <h2>Bulk import references</h2>
+      <p class="settings-section-hint">One reference per line, or separate with a semicolon. Commas add more verses/ranges to the same book and chapter — e.g. "John 3:16,18,20" or "Romans 8:28-30".</p>
+      <textarea id="bulkImportInput" rows="7" placeholder="John 3:16&#10;Romans 8:28-30&#10;Psalm 23&#10;Genesis 1:1; Genesis 1:3"></textarea>
+      <div id="bulkImportPreview" class="bulk-import-preview hidden">
+        <div id="bulkImportSummary" class="bulk-import-summary"></div>
+        <div id="bulkImportUnresolved" class="bulk-import-unresolved"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="bulkImportCancelBtn" class="btn btn-outline">Cancel</button>
+        <button type="button" id="bulkImportParseBtn" class="btn btn-outline">Parse</button>
+        <button type="button" id="bulkImportContinueBtn" class="btn btn-accent-solid hidden">Continue to tag…</button>
       </div>
     </div>
   </div>
