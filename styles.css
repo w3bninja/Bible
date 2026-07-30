@@ -19,6 +19,11 @@
   --radius: 8px;
   --radius-pill: 100px;
   --topbar-h: 57px;
+  --heatmap-0: oklch(0.96 0.006 255);
+  --heatmap-1: oklch(0.9 0.05 250);
+  --heatmap-2: oklch(0.8 0.09 250);
+  --heatmap-3: oklch(0.65 0.13 250);
+  --heatmap-4: oklch(0.5 0.15 250);
 }
 
 * { box-sizing: border-box; }
@@ -579,6 +584,62 @@ textarea, input {
   color: var(--text-heading);
   margin: 6px 0 16px;
 }
+
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin: 16px 0 18px;
+}
+
+.heatmap-legend-cell {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+.heatmap-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.heatmap-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.heatmap-row-label {
+  flex: none;
+  width: 88px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.heatmap-cells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.heatmap-cell {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  padding: 0;
+  cursor: pointer;
+}
+
+.heatmap-cell:hover { outline: 1.5px solid var(--accent-border); }
 
 .settings-section {
   border-bottom: 1px solid var(--border);

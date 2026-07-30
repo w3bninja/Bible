@@ -118,6 +118,7 @@ function showView(view) {
   el("tagsView").classList.toggle("hidden", view !== "tags");
   el("topicsView").classList.toggle("hidden", view !== "topics");
   el("topicReadingView").classList.toggle("hidden", view !== "topicReading");
+  el("insightsView").classList.toggle("hidden", view !== "insights");
   el("settingsView").classList.toggle("hidden", view !== "settings");
   el("searchView").classList.toggle("hidden", view !== "search");
 
@@ -131,6 +132,7 @@ function showView(view) {
     tags: "Your tagged verses",
     topics: "Auto-tags & topics",
     topicReading: "Topic reading",
+    insights: "Insights",
     settings: "Settings",
     search: "Search",
   };
@@ -157,6 +159,9 @@ document.querySelectorAll(".nav-item").forEach((item) => {
     } else if (item.dataset.view === "topics") {
       renderTopicsView();
       showView("topics");
+    } else if (item.dataset.view === "insights") {
+      renderInsightsView();
+      showView("insights");
     } else if (item.dataset.view === "settings") {
       showView("settings");
     }
@@ -1723,6 +1728,69 @@ el("exportDownloadBtn").addEventListener("click", () => {
 
   el("exportOverlay").classList.add("hidden");
 });
+
+// ---------- Insights: tag/note density heatmap ----------
+//
+// Counts only manual tags/notes (every key present in tagsData.verseTags is
+// already guaranteed to have at least one, per the invariant enforced
+// elsewhere: an entry is deleted once both its tagIds and note are empty).
+// Auto-tags aren't counted, same reasoning as keeping them off the reading
+// view — this is meant to reflect what the user actually studied, not what
+// a broad topic/phrase rule happens to match.
+
+const HEATMAP_BUCKETS = 4;
+
+function renderInsightsView() {
+  const container = el("heatmapGrid");
+  container.innerHTML = "";
+
+  const densityByBook = new Map(); // bookId -> number[] (per chapter)
+  let maxCount = 0;
+
+  bible.books.forEach((book) => {
+    const chapters = Array.isArray(book.chapters) ? book.chapters : [book.chapters];
+    densityByBook.set(book.id, new Array(chapters.length).fill(0));
+  });
+
+  Object.keys(tagsData.verseTags).forEach((key) => {
+    const { bookId, chapter } = parseVerseKey(key);
+    const counts = densityByBook.get(bookId);
+    if (!counts || chapter - 1 >= counts.length) return;
+    counts[chapter - 1]++;
+    if (counts[chapter - 1] > maxCount) maxCount = counts[chapter - 1];
+  });
+
+  bible.books.forEach((book) => {
+    const counts = densityByBook.get(book.id);
+    const row = document.createElement("div");
+    row.className = "heatmap-row";
+
+    const label = document.createElement("div");
+    label.className = "heatmap-row-label";
+    label.textContent = book.name;
+    row.appendChild(label);
+
+    const cellsWrap = document.createElement("div");
+    cellsWrap.className = "heatmap-cells";
+    counts.forEach((count, i) => {
+      const chapterNum = i + 1;
+      const bucket = count === 0 ? 0 : Math.min(HEATMAP_BUCKETS, Math.ceil((count / maxCount) * HEATMAP_BUCKETS));
+      const cell = document.createElement("button");
+      cell.type = "button";
+      cell.className = "heatmap-cell";
+      cell.style.background = `var(--heatmap-${bucket})`;
+      cell.title = `${book.name} ${chapterNum} — ${count} tagged/noted verse${count === 1 ? "" : "s"}`;
+      cell.addEventListener("click", () => {
+        selectBook(book.id, chapterNum);
+        showView("read");
+      });
+      cellsWrap.appendChild(cell);
+    });
+    row.appendChild(cellsWrap);
+
+    container.appendChild(row);
+  });
+}
 
 // ---------- Search ----------
 
