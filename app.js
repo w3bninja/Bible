@@ -8,6 +8,8 @@ let currentChapter = 1;
 let currentView = "read"; // 'read' | 'verse' | 'tags' | 'search'
 let currentVerseKey = null; // for verse detail view
 let activeTagFilter = null; // null = "All"
+let advancedFilterClauses = []; // [{id, tagId, negate}], ANDed together
+let advancedFilterActive = false;
 let pickerBookId = null; // set when drilled into chapter grid
 let tagAssignKeys = [];
 let tagAssignShowNote = false;
@@ -1341,10 +1343,11 @@ function renderTagFilterBar() {
   bar.innerHTML = "";
 
   const allBtn = document.createElement("button");
-  allBtn.className = "filter-pill" + (activeTagFilter === null ? " active" : "");
+  allBtn.className = "filter-pill" + (activeTagFilter === null && !advancedFilterActive ? " active" : "");
   allBtn.textContent = "All";
   allBtn.addEventListener("click", () => {
     activeTagFilter = null;
+    advancedFilterActive = false;
     renderTagsView();
   });
   bar.appendChild(allBtn);
@@ -1356,17 +1359,104 @@ function renderTagFilterBar() {
   const manualTags = tagsData.tags.filter((t) => !isSmartTag(t));
   manualTags.forEach((tag) => {
     const btn = document.createElement("button");
-    btn.className = "filter-pill" + (activeTagFilter === tag.id ? " active" : "");
+    btn.className = "filter-pill" + (activeTagFilter === tag.id && !advancedFilterActive ? " active" : "");
     btn.textContent = `${tag.name} · ${tagCount(tag)}`;
     btn.addEventListener("click", () => {
       activeTagFilter = tag.id;
+      advancedFilterActive = false;
       renderTagsView();
     });
     bar.appendChild(btn);
   });
 
-  // Auto-tags aren't listed as pills here (managed on the Topics page), but
+  // Auto-tags aren't listed as pills here — managed on the Topics page instead.
 }
+
+// ---------- Advanced filter (AND/NOT combinations of manual tags) ----------
+
+el("toggleAdvancedFilterBtn").addEventListener("click", () => {
+  const panel = el("advancedFilterPanel");
+  const opening = panel.classList.contains("hidden");
+  panel.classList.toggle("hidden");
+  if (opening && advancedFilterClauses.length === 0) {
+    advancedFilterClauses.push({ id: crypto.randomUUID(), tagId: "", negate: false });
+  }
+  renderAdvancedFilterClauses();
+});
+
+function renderAdvancedFilterClauses() {
+  const container = el("advancedFilterClauses");
+  container.innerHTML = "";
+  const manualTags = tagsData.tags.filter((t) => !isSmartTag(t));
+
+  advancedFilterClauses.forEach((clause) => {
+    const row = document.createElement("div");
+    row.className = "filter-clause-row";
+
+    const negateSelect = document.createElement("select");
+    ["has", "does not have"].forEach((label, i) => {
+      const opt = document.createElement("option");
+      opt.value = i === 1 ? "true" : "false";
+      opt.textContent = label;
+      negateSelect.appendChild(opt);
+    });
+    negateSelect.value = clause.negate ? "true" : "false";
+    negateSelect.addEventListener("change", () => {
+      clause.negate = negateSelect.value === "true";
+    });
+    row.appendChild(negateSelect);
+
+    const tagSelect = document.createElement("select");
+    const placeholderOpt = document.createElement("option");
+    placeholderOpt.value = "";
+    placeholderOpt.textContent = "Choose a tag…";
+    tagSelect.appendChild(placeholderOpt);
+    manualTags.forEach((tag) => {
+      const opt = document.createElement("option");
+      opt.value = tag.id;
+      opt.textContent = tag.name;
+      tagSelect.appendChild(opt);
+    });
+    tagSelect.value = clause.tagId;
+    tagSelect.addEventListener("change", () => {
+      clause.tagId = tagSelect.value;
+    });
+    row.appendChild(tagSelect);
+
+    if (advancedFilterClauses.length > 1) {
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "filter-clause-remove";
+      removeBtn.textContent = "×";
+      removeBtn.title = "Remove condition";
+      removeBtn.addEventListener("click", () => {
+        advancedFilterClauses = advancedFilterClauses.filter((c) => c.id !== clause.id);
+        renderAdvancedFilterClauses();
+      });
+      row.appendChild(removeBtn);
+    }
+
+    container.appendChild(row);
+  });
+}
+
+el("addFilterClauseBtn").addEventListener("click", () => {
+  advancedFilterClauses.push({ id: crypto.randomUUID(), tagId: "", negate: false });
+  renderAdvancedFilterClauses();
+});
+
+el("applyAdvancedFilterBtn").addEventListener("click", () => {
+  activeTagFilter = null;
+  advancedFilterActive = true;
+  renderTagsView();
+});
+
+el("clearAdvancedFilterBtn").addEventListener("click", () => {
+  advancedFilterClauses = [{ id: crypto.randomUUID(), tagId: "", negate: false }];
+  advancedFilterActive = false;
+  renderAdvancedFilterClauses();
+  renderTagsView();
+});
 
 function sameTagIds(a, b) {
   return a.length === b.length && a.every((id) => b.includes(id));
@@ -1374,12 +1464,24 @@ function sameTagIds(a, b) {
 
 const TAG_VERSE_LIST_CAP = 500;
 
+function matchesAdvancedFilter(key) {
+  const tagIds = tagsData.verseTags[key]?.tagIds || [];
+  return advancedFilterClauses
+    .filter((c) => c.tagId)
+    .every((c) => (c.negate ? !tagIds.includes(c.tagId) : tagIds.includes(c.tagId)));
+}
+
 function renderTagVerseList() {
   const container = el("tagVerseList");
   container.innerHTML = "";
 
+  const usingAdvanced = advancedFilterActive && advancedFilterClauses.some((c) => c.tagId);
+
   let entries = Object.keys(tagsData.verseTags)
-    .filter((key) => (activeTagFilter ? (tagsData.verseTags[key].tagIds || []).includes(activeTagFilter) : true))
+    .filter((key) => {
+      if (usingAdvanced) return matchesAdvancedFilter(key);
+      return activeTagFilter ? (tagsData.verseTags[key].tagIds || []).includes(activeTagFilter) : true;
+    })
     .map((key) => ({ key, ...parseVerseKey(key) }))
     .sort((a, b) => {
       const oa = booksById.get(a.bookId)?.order ?? 0;
@@ -1388,7 +1490,9 @@ function renderTagVerseList() {
     });
 
   if (entries.length === 0) {
-    container.innerHTML = '<div class="empty-msg">No tagged verses yet. Select a verse while reading to add a tag or note.</div>';
+    container.innerHTML = usingAdvanced
+      ? '<div class="empty-msg">No verses match this filter.</div>'
+      : '<div class="empty-msg">No tagged verses yet. Select a verse while reading to add a tag or note.</div>';
     return;
   }
 
