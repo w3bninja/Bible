@@ -33,9 +33,10 @@
       if (state !== expectedState) return fail("state_mismatch");
 
       try {
+        const sitePassword = localStorage.getItem("bible-study:sitePassword") || "";
         const res = await fetch("/api/youversion/token", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-Site-Password": sitePassword },
           body: JSON.stringify({
             code,
             code_verifier: verifier,

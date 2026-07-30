@@ -1,4 +1,5 @@
 const { getStore, connectLambda } = require("@netlify/blobs");
+const { isAuthorized, unauthorizedResponse } = require("./_auth");
 
 // Public OAuth client_id — not a secret, safe to live in source. This is a
 // PKCE (public client) flow, so no client secret exists anywhere.
@@ -12,6 +13,7 @@ function store() {
 
 exports.handler = async (event) => {
   connectLambda(event);
+  if (!isAuthorized(event)) return unauthorizedResponse();
 
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method not allowed" };

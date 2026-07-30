@@ -4,6 +4,7 @@
 // real import function is built and confirmed working.
 
 const { getStore, connectLambda } = require("@netlify/blobs");
+const { isAuthorized, unauthorizedResponse } = require("./_auth");
 
 const YOUVERSION_APP_KEY = "Z8ou4eKH1jLzXHa8QOvlNnCgLQmXRtY2tyIfBg31o8omy0IO";
 const TOKEN_ENDPOINT = "https://api.youversion.com/auth/token";
@@ -38,6 +39,7 @@ async function refreshTokens(tokens) {
 
 exports.handler = async (event) => {
   connectLambda(event);
+  if (!isAuthorized(event)) return unauthorizedResponse();
 
   const raw = await store().get(TOKENS_KEY);
   if (!raw) {

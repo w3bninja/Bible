@@ -1,4 +1,5 @@
 const { getStore, connectLambda } = require("@netlify/blobs");
+const { isAuthorized, unauthorizedResponse } = require("./_auth");
 
 const KEY = "tags.json";
 const EMPTY = '{"tags":[],"verseTags":{}}';
@@ -9,6 +10,7 @@ function store() {
 
 exports.handler = async (event) => {
   connectLambda(event);
+  if (!isAuthorized(event)) return unauthorizedResponse();
 
   if (event.httpMethod === "GET") {
     try {

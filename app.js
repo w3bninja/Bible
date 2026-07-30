@@ -57,8 +57,18 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+function sitePasswordHeaders() {
+  const pw = localStorage.getItem("bible-study:sitePassword");
+  return pw ? { "X-Site-Password": pw } : {};
+}
+
 async function fetchJSON(url) {
-  const res = await fetch(url, { cache: "no-store" });
+  const isApi = url.startsWith("/api/");
+  const res = await fetch(url, { cache: "no-store", headers: isApi ? sitePasswordHeaders() : undefined });
+  if (isApi && res.status === 401) {
+    showLockScreen();
+    throw new Error("Unauthorized");
+  }
   if (!res.ok) throw new Error(`Failed to load ${url}: ${res.status}`);
   return res.json();
 }
@@ -1047,7 +1057,7 @@ async function refreshYouVersionStatus() {
   disconnectBtn.classList.add("hidden");
 
   try {
-    const res = await fetch("/api/youversion/status");
+    const res = await fetch("/api/youversion/status", { headers: sitePasswordHeaders() });
     const data = await res.json();
     if (data.connected) {
       statusText.textContent = "YouVersion account connected.";
@@ -1067,7 +1077,7 @@ el("youversionConnectBtn").addEventListener("click", connectYouVersion);
 
 el("youversionDisconnectBtn").addEventListener("click", async () => {
   try {
-    await fetch("/api/youversion/status", { method: "DELETE" });
+    await fetch("/api/youversion/status", { method: "DELETE", headers: sitePasswordHeaders() });
   } catch (err) {
     console.error(err);
   }
@@ -2218,13 +2228,62 @@ async function saveTags() {
   try {
     const res = await fetch("/api/tags", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...sitePasswordHeaders() },
       body: JSON.stringify(tagsData),
     });
+    if (res.status === 401) {
+      showLockScreen();
+      return;
+    }
     if (!res.ok) throw new Error(`Save failed: ${res.status}`);
   } catch (err) {
     console.error(err);
   }
+}
+
+// ---------- Site password lock screen ----------
+
+function showLockScreen() {
+  if (document.getElementById("lockScreenOverlay")) return;
+
+  const overlay = document.createElement("div");
+  overlay.id = "lockScreenOverlay";
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal lock-screen-modal">
+      <h2>Enter passphrase</h2>
+      <form id="lockScreenForm">
+        <input type="password" id="lockScreenInput" autocomplete="current-password" placeholder="Passphrase" required />
+        <div id="lockScreenError" class="lock-screen-error hidden">Incorrect passphrase.</div>
+        <button type="submit" class="btn btn-accent-solid">Unlock</button>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  document.getElementById("lockScreenForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = document.getElementById("lockScreenInput");
+    const errorEl = document.getElementById("lockScreenError");
+    const candidate = input.value;
+
+    try {
+      const res = await fetch("/api/tags", { cache: "no-store", headers: { "X-Site-Password": candidate } });
+      if (res.ok) {
+        localStorage.setItem("bible-study:sitePassword", candidate);
+        overlay.remove();
+        window.location.reload();
+      } else {
+        errorEl.classList.remove("hidden");
+        input.value = "";
+        input.focus();
+      }
+    } catch {
+      errorEl.classList.remove("hidden");
+    }
+  });
+
+  document.getElementById("lockScreenInput").focus();
 }
 
 init();
