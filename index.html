@@ -158,6 +158,10 @@
           <span>More</span>
         </div>
         <div id="heatmapGrid" class="heatmap-grid"></div>
+
+        <h2 class="settings-section-title tag-graph-title">Tag Connections</h2>
+        <p class="settings-section-hint">How often your manual tags appear together on the same verse. Line thickness reflects how much they overlap.</p>
+        <div id="tagGraphWrap" class="tag-graph-wrap"></div>
       </div>
 
       <div id="settingsView" class="view-content hidden">
@@ -186,6 +190,17 @@
           <h2 class="settings-section-title">Export</h2>
           <p class="settings-section-hint">Download your tags and notes as a backup, or for use in Notion, Obsidian, or elsewhere.</p>
           <button type="button" id="exportTagsBtn" class="btn btn-outline btn-small">Export…</button>
+        </div>
+
+        <div class="settings-section">
+          <h2 class="settings-section-title">Shared Links</h2>
+          <p class="settings-section-hint">A read-only link to one tag's verses — anyone with the link can view it, no site password needed. Manual tags only.</p>
+          <div class="settings-row">
+            <label for="shareTagSelect">Tag</label>
+            <select id="shareTagSelect" class="audio-select"></select>
+            <button type="button" id="createShareBtn" class="btn btn-outline btn-small">Create link</button>
+          </div>
+          <div id="sharesList" class="shares-list"></div>
         </div>
       </div>
 

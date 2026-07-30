@@ -641,6 +641,39 @@ textarea, input {
 
 .heatmap-cell:hover { outline: 1.5px solid var(--accent-border); }
 
+.tag-graph-title { margin-top: 28px; }
+
+.tag-graph-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 4px;
+}
+
+.tag-graph-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 24px 0;
+}
+
+.tag-graph-node circle {
+  cursor: pointer;
+  transition: r 0.1s ease;
+}
+
+.tag-graph-node:hover circle { filter: brightness(0.92); }
+
+.tag-graph-label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  fill: var(--text-primary);
+  pointer-events: none;
+}
+
+.tag-graph-edge {
+  stroke: var(--accent-border);
+  fill: none;
+}
+
 .settings-section {
   border-bottom: 1px solid var(--border);
   padding-bottom: 20px;
@@ -673,6 +706,47 @@ textarea, input {
 }
 
 .settings-row label { width: 60px; flex: none; }
+
+.shares-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.share-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.share-row:last-child { border-bottom: none; }
+
+.share-row-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: none;
+}
+
+.share-row-link {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.share-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 48px 24px 80px;
+}
+
+.share-header { margin-bottom: 28px; }
 
 .tags-page-header {
   display: flex;

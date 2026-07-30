@@ -163,6 +163,7 @@ document.querySelectorAll(".nav-item").forEach((item) => {
       renderInsightsView();
       showView("insights");
     } else if (item.dataset.view === "settings") {
+      renderSharesSection();
       showView("settings");
     }
   });
@@ -1741,6 +1742,11 @@ el("exportDownloadBtn").addEventListener("click", () => {
 const HEATMAP_BUCKETS = 4;
 
 function renderInsightsView() {
+  renderHeatmap();
+  renderTagGraph();
+}
+
+function renderHeatmap() {
   const container = el("heatmapGrid");
   container.innerHTML = "";
 
@@ -1791,6 +1797,238 @@ function renderInsightsView() {
     container.appendChild(row);
   });
 }
+
+// ---------- Tag connection graph (circular node-link diagram) ----------
+//
+// A physics-based force layout would need a first real dependency and real
+// simulation code; at the tag counts a personal app actually has, a fixed
+// circular layout shows the same information (which tags co-occur, how
+// strongly) without any of that — nodes evenly spaced around a circle,
+// edges between tags that share at least one verse, weighted by overlap.
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function renderTagGraph() {
+  const wrap = el("tagGraphWrap");
+  wrap.innerHTML = "";
+
+  const manualTags = tagsData.tags.filter((t) => !isSmartTag(t));
+  if (manualTags.length < 2) {
+    wrap.innerHTML = '<div class="tag-graph-empty">Create at least two manual tags to see connections.</div>';
+    return;
+  }
+
+  const overlap = new Map(); // "tagIdA|tagIdB" (sorted) -> count
+  const verseCounts = new Map(manualTags.map((t) => [t.id, 0]));
+
+  Object.values(tagsData.verseTags).forEach((entry) => {
+    const ids = (entry.tagIds || []).filter((id) => verseCounts.has(id));
+    ids.forEach((id) => verseCounts.set(id, verseCounts.get(id) + 1));
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const key = [ids[i], ids[j]].sort().join("|");
+        overlap.set(key, (overlap.get(key) || 0) + 1);
+      }
+    }
+  });
+
+  const maxOverlap = Math.max(1, ...overlap.values());
+  const maxVerseCount = Math.max(1, ...verseCounts.values());
+
+  const size = 360;
+  const cx = size / 2;
+  const cy = size / 2;
+  const radius = size / 2 - 55;
+  const positions = new Map();
+  manualTags.forEach((tag, i) => {
+    const angle = (2 * Math.PI * i) / manualTags.length - Math.PI / 2;
+    positions.set(tag.id, { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) });
+  });
+
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
+  svg.setAttribute("width", size);
+  svg.setAttribute("height", size);
+
+  overlap.forEach((count, key) => {
+    const [aId, bId] = key.split("|");
+    const a = positions.get(aId);
+    const b = positions.get(bId);
+    const tagA = tagsData.tags.find((t) => t.id === aId);
+    const tagB = tagsData.tags.find((t) => t.id === bId);
+    if (!a || !b || !tagA || !tagB) return;
+
+    const line = document.createElementNS(SVG_NS, "line");
+    line.setAttribute("x1", a.x);
+    line.setAttribute("y1", a.y);
+    line.setAttribute("x2", b.x);
+    line.setAttribute("y2", b.y);
+    line.setAttribute("class", "tag-graph-edge");
+    line.setAttribute("stroke-width", String(1 + (count / maxOverlap) * 6));
+    line.setAttribute("stroke-opacity", String(0.25 + (count / maxOverlap) * 0.55));
+
+    const title = document.createElementNS(SVG_NS, "title");
+    title.textContent = `${tagA.name} + ${tagB.name}: ${count} verse${count === 1 ? "" : "s"}`;
+    line.appendChild(title);
+
+    svg.appendChild(line);
+  });
+
+  manualTags.forEach((tag) => {
+    const pos = positions.get(tag.id);
+    const count = verseCounts.get(tag.id);
+    const r = 10 + (count / maxVerseCount) * 14;
+    const { bg } = chipColors(tag.hue);
+
+    const g = document.createElementNS(SVG_NS, "g");
+    g.setAttribute("class", "tag-graph-node");
+    g.setAttribute("transform", `translate(${pos.x}, ${pos.y})`);
+    g.addEventListener("click", () => {
+      activeTagFilter = tag.id;
+      advancedFilterActive = false;
+      showView("tags");
+      renderTagsView();
+    });
+
+    const circle = document.createElementNS(SVG_NS, "circle");
+    circle.setAttribute("r", String(r));
+    circle.setAttribute("fill", bg);
+    circle.setAttribute("stroke", "currentColor");
+    g.appendChild(circle);
+
+    const titleEl = document.createElementNS(SVG_NS, "title");
+    titleEl.textContent = `${tag.name}: ${count} verse${count === 1 ? "" : "s"}`;
+    g.appendChild(titleEl);
+
+    const label = document.createElementNS(SVG_NS, "text");
+    label.setAttribute("class", "tag-graph-label");
+    const isRight = pos.x > cx + 5;
+    const isLeft = pos.x < cx - 5;
+    label.setAttribute("text-anchor", isRight ? "start" : isLeft ? "end" : "middle");
+    label.setAttribute("x", String(isRight ? r + 4 : isLeft ? -(r + 4) : 0));
+    label.setAttribute("y", "4");
+    label.textContent = tag.name;
+    g.appendChild(label);
+
+    svg.appendChild(g);
+  });
+
+  wrap.appendChild(svg);
+}
+
+// ---------- Read-only share links ----------
+
+function shareUrlFor(token) {
+  return `${window.location.origin}/share.html?t=${token}`;
+}
+
+function populateShareTagSelect() {
+  const select = el("shareTagSelect");
+  select.innerHTML = "";
+  const manualTags = tagsData.tags.filter((t) => !isSmartTag(t));
+  if (!manualTags.length) {
+    const opt = document.createElement("option");
+    opt.textContent = "No manual tags yet";
+    opt.disabled = true;
+    select.appendChild(opt);
+    el("createShareBtn").disabled = true;
+    return;
+  }
+  el("createShareBtn").disabled = false;
+  manualTags.forEach((tag) => {
+    const opt = document.createElement("option");
+    opt.value = tag.id;
+    opt.textContent = tag.name;
+    select.appendChild(opt);
+  });
+}
+
+async function renderSharesSection() {
+  populateShareTagSelect();
+  const list = el("sharesList");
+  list.innerHTML = '<div class="empty-msg">Loading…</div>';
+
+  try {
+    const res = await fetch("/api/shares", { headers: sitePasswordHeaders() });
+    if (res.status === 401) {
+      showLockScreen();
+      return;
+    }
+    const shares = await res.json();
+    const entries = Object.entries(shares).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+
+    list.innerHTML = "";
+    if (!entries.length) {
+      list.innerHTML = '<div class="empty-msg">No shared links yet.</div>';
+      return;
+    }
+
+    entries.forEach(([token, share]) => {
+      const row = document.createElement("div");
+      row.className = "share-row";
+      const url = shareUrlFor(token);
+      row.innerHTML = `
+        <span class="share-row-name">${escapeHtml(share.tagName)}</span>
+        <span class="share-row-link">${escapeHtml(url)}</span>
+      `;
+      const copyBtn = document.createElement("button");
+      copyBtn.type = "button";
+      copyBtn.className = "btn btn-outline btn-small";
+      copyBtn.textContent = "Copy";
+      copyBtn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(url);
+          copyBtn.textContent = "Copied!";
+          setTimeout(() => (copyBtn.textContent = "Copy"), 1200);
+        } catch (err) {
+          console.error(err);
+        }
+      });
+      row.appendChild(copyBtn);
+
+      const revokeBtn = document.createElement("button");
+      revokeBtn.type = "button";
+      revokeBtn.className = "btn btn-outline btn-small";
+      revokeBtn.textContent = "Revoke";
+      revokeBtn.addEventListener("click", async () => {
+        await fetch(`/api/shares?t=${encodeURIComponent(token)}`, { method: "DELETE", headers: sitePasswordHeaders() });
+        renderSharesSection();
+      });
+      row.appendChild(revokeBtn);
+
+      list.appendChild(row);
+    });
+  } catch (err) {
+    console.error(err);
+    list.innerHTML = '<div class="empty-msg">Couldn\'t load shared links.</div>';
+  }
+}
+
+el("createShareBtn").addEventListener("click", async () => {
+  const select = el("shareTagSelect");
+  const tagId = select.value;
+  const tag = tagsData.tags.find((t) => t.id === tagId);
+  if (!tag) return;
+
+  const btn = el("createShareBtn");
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/shares", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sitePasswordHeaders() },
+      body: JSON.stringify({ tagId: tag.id, tagName: tag.name }),
+    });
+    if (res.status === 401) {
+      showLockScreen();
+      return;
+    }
+    await renderSharesSection();
+  } catch (err) {
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 // ---------- Search ----------
 

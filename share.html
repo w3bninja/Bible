@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Shared verses</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="share-page">
+    <div class="share-header">
+      <h1 id="shareTagName" class="page-heading">Loading…</h1>
+      <p id="shareCount" class="settings-section-hint"></p>
+    </div>
+    <div id="shareContent" class="topic-reading-content"></div>
+  </div>
+
+  <script>
+    (async () => {
+      function escapeHtml(str) {
+        const div = document.createElement("div");
+        div.textContent = str;
+        return div.innerHTML;
+      }
+
+      function parseKey(key) {
+        const parts = key.split("-");
+        const verse = Number(parts.pop());
+        const chapter = Number(parts.pop());
+        const bookId = parts.join("-");
+        return { bookId, chapter, verse };
+      }
+
+      const token = new URLSearchParams(window.location.search).get("t");
+      if (!token) {
+        document.getElementById("shareTagName").textContent = "Invalid link";
+        return;
+      }
+
+      try {
+        const [shareRes, bible] = await Promise.all([
+          fetch("/api/share-view?t=" + encodeURIComponent(token)).then((r) => (r.ok ? r.json() : Promise.reject(r.status))),
+          fetch("data/bible.json").then((r) => r.json()),
+        ]);
+
+        const booksById = new Map(bible.books.map((b) => [b.id, b]));
+        const refLabel = (bookId, chapter, verse) => {
+          const book = booksById.get(bookId);
+          return `${book ? book.name : bookId} ${chapter}:${verse}`;
+        };
+
+        document.title = `Shared: ${shareRes.tagName}`;
+        document.getElementById("shareTagName").textContent = shareRes.tagName;
+
+        const entries = shareRes.entries
+          .map((e) => ({ ...parseKey(e.key), key: e.key, note: e.note }))
+          .sort((a, b) => {
+            const oa = booksById.get(a.bookId)?.order ?? 0;
+            const ob = booksById.get(b.bookId)?.order ?? 0;
+            return oa - ob || a.chapter - b.chapter || a.verse - b.verse;
+          });
+
+        document.getElementById("shareCount").textContent = `${entries.length} verse${entries.length === 1 ? "" : "s"}`;
+
+        const groups = [];
+        entries.forEach(({ key, bookId, chapter, verse, note }) => {
+          const last = groups[groups.length - 1];
+          if (last && last.bookId === bookId && last.chapter === chapter && verse === last.endVerse + 1 && (note || "") === (last.note || "")) {
+            last.endVerse = verse;
+            last.keys.push(key);
+          } else {
+            groups.push({ bookId, chapter, startVerse: verse, endVerse: verse, note, keys: [key] });
+          }
+        });
+
+        const container = document.getElementById("shareContent");
+        if (!groups.length) {
+          container.innerHTML = '<div class="empty-msg">No verses in this shared collection yet.</div>';
+        }
+
+        groups.forEach((group) => {
+          const book = booksById.get(group.bookId);
+          const chapters = Array.isArray(book.chapters) ? book.chapters : [book.chapters];
+          const text = group.keys.map((k) => chapters[group.chapter - 1].verses[parseKey(k).verse - 1]).join(" ");
+          const refText =
+            group.startVerse === group.endVerse
+              ? refLabel(group.bookId, group.chapter, group.startVerse)
+              : `${refLabel(group.bookId, group.chapter, group.startVerse)}–${group.endVerse}`;
+
+          const section = document.createElement("div");
+          section.className = "topic-reading-passage";
+          section.innerHTML = `
+            <div class="topic-reading-ref">${escapeHtml(refText)}</div>
+            <p class="topic-reading-para">${escapeHtml(text)}</p>
+            ${group.note ? `<div class="card-note">${escapeHtml(group.note)}</div>` : ""}
+          `;
+          container.appendChild(section);
+        });
+      } catch (err) {
+        document.getElementById("shareTagName").textContent = "Link not found or expired";
+        document.getElementById("shareCount").textContent = "";
+      }
+    })();
+  </script>
+</body>
+</html>
