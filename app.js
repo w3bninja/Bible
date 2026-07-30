@@ -1475,6 +1475,147 @@ function renderTagVerseList() {
   }
 }
 
+// ---------- Export (JSON / Markdown / Obsidian) ----------
+//
+// One shared "grouped passage" builder feeds all three formats, so a note
+// written across consecutive verses reads as one passage in the export too
+// (same grouping convention as the Tags page's own verse list). Notion has
+// no distinct export format here — it natively imports Markdown, so the
+// plain Markdown export doubles as the Notion path.
+
+function buildExportGroups(scope) {
+  const filterTagId = scope === "filtered" ? activeTagFilter : null;
+
+  let entries = Object.keys(tagsData.verseTags)
+    .filter((key) => (filterTagId ? (tagsData.verseTags[key].tagIds || []).includes(filterTagId) : true))
+    .map((key) => ({ key, ...parseVerseKey(key) }))
+    .sort((a, b) => {
+      const oa = booksById.get(a.bookId)?.order ?? 0;
+      const ob = booksById.get(b.bookId)?.order ?? 0;
+      return oa - ob || a.chapter - b.chapter || a.verse - b.verse;
+    });
+
+  const groups = [];
+  entries.forEach(({ key, bookId, chapter, verse }) => {
+    const note = tagsData.verseTags[key]?.note || "";
+    const tagIds = tagsData.verseTags[key]?.tagIds || [];
+    const last = groups[groups.length - 1];
+    if (
+      last &&
+      last.bookId === bookId &&
+      last.chapter === chapter &&
+      verse === last.endVerse + 1 &&
+      note === (last.note || "") &&
+      sameTagIds(tagIds, last.tagIds || [])
+    ) {
+      last.endVerse = verse;
+      last.keys.push(key);
+    } else {
+      groups.push({ bookId, chapter, startVerse: verse, endVerse: verse, note, tagIds, keys: [key] });
+    }
+  });
+
+  return groups.map((group) => {
+    const book = booksById.get(group.bookId);
+    const chapters = Array.isArray(book.chapters) ? book.chapters : [book.chapters];
+    const text = group.keys.map((k) => chapters[group.chapter - 1].verses[parseVerseKey(k).verse - 1]).join(" ");
+    const refText =
+      group.startVerse === group.endVerse
+        ? refLabel(group.bookId, group.chapter, group.startVerse)
+        : `${refLabel(group.bookId, group.chapter, group.startVerse)}–${group.endVerse}`;
+    const tagNames = group.tagIds.map((id) => tagsData.tags.find((t) => t.id === id)?.name).filter(Boolean);
+    return { refText, text, note: group.note, tagNames };
+  });
+}
+
+function formatExportAsJSON(groups) {
+  return JSON.stringify(
+    {
+      exportedAt: new Date().toISOString(),
+      tags: tagsData.tags.map((t) => ({ name: t.name })),
+      entries: groups,
+    },
+    null,
+    2
+  );
+}
+
+function formatExportAsMarkdown(groups) {
+  return groups
+    .map((g) => {
+      const tagLine = g.tagNames.length ? `**Tags:** ${g.tagNames.join(", ")}\n\n` : "";
+      const noteLine = g.note ? `${g.note}\n\n` : "";
+      return `## ${g.refText}\n\n> ${g.text}\n\n${tagLine}${noteLine}`;
+    })
+    .join("---\n\n");
+}
+
+function formatExportAsObsidian(groups) {
+  const allTags = [...new Set(groups.flatMap((g) => g.tagNames))];
+  const frontmatter = `---\ntags: [${allTags.map((t) => t.replace(/\s+/g, "-")).join(", ")}]\n---\n\n`;
+  const body = groups
+    .map((g) => {
+      const tagLine = g.tagNames.length ? g.tagNames.map((t) => `#${t.replace(/\s+/g, "-")}`).join(" ") + "\n\n" : "";
+      const noteLine = g.note ? `${g.note}\n\n` : "";
+      return `## [[${g.refText}]]\n\n> ${g.text}\n\n${tagLine}${noteLine}`;
+    })
+    .join("---\n\n");
+  return frontmatter + body;
+}
+
+function downloadFile(filename, content, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+const EXPORT_FORMAT_HINTS = {
+  json: "A complete, self-contained backup — every tagged verse with its text, tags, and notes.",
+  markdown: "Plain Markdown. Notion imports this directly (File → Import → Markdown).",
+  obsidian: "Markdown with a YAML frontmatter tag list, inline #tags, and [[wiki-links]] for Obsidian.",
+};
+
+el("exportTagsBtn").addEventListener("click", () => {
+  el("exportScopeFilteredOption").disabled = !activeTagFilter;
+  document.querySelector('input[name="exportScope"][value="all"]').checked = true;
+  updateExportHint();
+  el("exportOverlay").classList.remove("hidden");
+});
+
+function updateExportHint() {
+  const format = document.querySelector('input[name="exportFormat"]:checked').value;
+  el("exportFormatHint").textContent = EXPORT_FORMAT_HINTS[format];
+}
+
+document.querySelectorAll('input[name="exportFormat"]').forEach((input) => {
+  input.addEventListener("change", updateExportHint);
+});
+
+el("exportCancelBtn").addEventListener("click", () => el("exportOverlay").classList.add("hidden"));
+
+el("exportDownloadBtn").addEventListener("click", () => {
+  const format = document.querySelector('input[name="exportFormat"]:checked').value;
+  const scope = document.querySelector('input[name="exportScope"]:checked').value;
+  const groups = buildExportGroups(scope);
+
+  const date = new Date().toISOString().slice(0, 10);
+  if (format === "json") {
+    downloadFile(`bible-study-export-${date}.json`, formatExportAsJSON(groups), "application/json");
+  } else if (format === "markdown") {
+    downloadFile(`bible-study-export-${date}.md`, formatExportAsMarkdown(groups), "text/markdown");
+  } else {
+    downloadFile(`bible-study-export-${date}.md`, formatExportAsObsidian(groups), "text/markdown");
+  }
+
+  el("exportOverlay").classList.add("hidden");
+});
+
 // ---------- Search ----------
 
 el("searchToggleBtn").addEventListener("click", () => {

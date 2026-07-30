@@ -92,7 +92,10 @@
       <div id="tagsView" class="view-content hidden">
         <div class="tags-page-header">
           <h1 class="page-heading">Tags</h1>
-          <button type="button" id="newTagPageBtn" class="btn btn-accent-solid btn-small">+ New Tag</button>
+          <div class="tags-page-header-actions">
+            <button type="button" id="exportTagsBtn" class="btn btn-outline btn-small">Export…</button>
+            <button type="button" id="newTagPageBtn" class="btn btn-accent-solid btn-small">+ New Tag</button>
+          </div>
         </div>
         <div id="youversionPanel" class="youversion-panel">
           <span id="youversionStatusText">Checking YouVersion connection…</span>
@@ -244,6 +247,32 @@
           <button type="submit" class="btn btn-accent-solid" id="newTagSubmitBtn">Create</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div id="exportOverlay" class="modal-overlay hidden">
+    <div class="modal">
+      <h2>Export tags &amp; notes</h2>
+      <div class="export-field">
+        <div class="export-field-label">Format</div>
+        <div class="export-format-options">
+          <label><input type="radio" name="exportFormat" value="json" checked /> JSON (full backup)</label>
+          <label><input type="radio" name="exportFormat" value="markdown" /> Markdown</label>
+          <label><input type="radio" name="exportFormat" value="obsidian" /> Obsidian-flavored Markdown</label>
+        </div>
+        <div class="export-hint" id="exportFormatHint"></div>
+      </div>
+      <div class="export-field">
+        <div class="export-field-label">Include</div>
+        <div class="export-format-options">
+          <label><input type="radio" name="exportScope" value="all" checked /> All tagged verses</label>
+          <label><input type="radio" name="exportScope" value="filtered" id="exportScopeFilteredOption" /> Only the current filter</label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="exportCancelBtn" class="btn btn-outline">Cancel</button>
+        <button type="button" id="exportDownloadBtn" class="btn btn-accent-solid">Download</button>
+      </div>
     </div>
   </div>
 
