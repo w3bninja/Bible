@@ -82,6 +82,10 @@
         <button type="button" class="verse-detail-ref" id="verseDetailRef" title="View in chapter"></button>
         <div class="verse-detail-text" id="verseDetailText"></div>
         <div class="verse-detail-tags" id="verseDetailTags"></div>
+        <div id="verseDetailLinks" class="verse-detail-links hidden">
+          <div class="notes-label">REFERENCES</div>
+          <div id="verseDetailLinksList" class="verse-links-list"></div>
+        </div>
         <div class="notes-label-row">
           <div class="notes-label">MY NOTES</div>
           <button type="button" id="verseDetailNoteClear" class="note-clear-btn hidden">Delete note</button>
@@ -163,6 +167,10 @@
         <h2 class="settings-section-title tag-graph-title">Tag Connections</h2>
         <p class="settings-section-hint">How often your manual tags appear together on the same verse. Line thickness reflects how much they overlap.</p>
         <div id="tagGraphWrap" class="tag-graph-wrap"></div>
+
+        <h2 class="settings-section-title tag-graph-title">Scripture References</h2>
+        <p class="settings-section-hint">Cross-references you've linked between passages (e.g. a quote and its source). Grouped by chapter since verse-level would be too dense to read.</p>
+        <div id="refGraphWrap" class="tag-graph-wrap"></div>
       </div>
 
       <div id="settingsView" class="view-content hidden">
@@ -248,6 +256,7 @@
     <span id="selectionCount"></span>
     <div class="selection-actions">
       <button id="studyWordsBtn" type="button" class="btn btn-outline btn-small hidden">Study words…</button>
+      <button id="linkSelectionBtn" type="button" class="btn btn-outline btn-small">Link to…</button>
       <button id="tagSelectionBtn" type="button" class="btn btn-accent-solid btn-small">Tag &amp; note selected…</button>
       <button id="clearSelectionBtn" type="button" class="btn btn-outline btn-small">Clear</button>
     </div>
@@ -340,6 +349,24 @@
       <div class="modal-actions">
         <button type="button" id="exportCancelBtn" class="btn btn-outline">Cancel</button>
         <button type="button" id="exportDownloadBtn" class="btn btn-accent-solid">Download</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="linkOverlay" class="modal-overlay hidden">
+    <div class="modal">
+      <h2>Link to another passage</h2>
+      <div class="modal-ref" id="linkFromRef"></div>
+      <label>Reference
+        <input type="text" id="linkToInput" placeholder="e.g. Psalm 22 or Psalm 22:1-18" />
+      </label>
+      <div id="linkToError" class="bulk-import-unresolved hidden"></div>
+      <label class="note-label">Note (optional)
+        <textarea id="linkNoteInput" rows="2" placeholder="Why these connect…"></textarea>
+      </label>
+      <div class="modal-actions">
+        <button type="button" id="linkCancelBtn" class="btn btn-outline">Cancel</button>
+        <button type="button" id="linkSaveBtn" class="btn btn-accent-solid">Save link</button>
       </div>
     </div>
   </div>

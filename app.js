@@ -1,7 +1,7 @@
 // State
 let bible = null;
 let booksById = new Map();
-let tagsData = { tags: [], verseTags: {} }; // tags: [{id,name,hue}], verseTags[key] = { tagIds:[], note:'' }
+let tagsData = { tags: [], verseTags: {}, links: [] }; // tags: [{id,name,hue}], verseTags[key] = { tagIds:[], note:'' }, links: [{id, a:[keys], b:[keys], note}]
 
 let currentBookId = null;
 let currentChapter = 1;
@@ -85,6 +85,7 @@ async function init() {
     tagsData = tagsJson;
     if (!tagsData.tags) tagsData.tags = [];
     if (!tagsData.verseTags) tagsData.verseTags = {};
+    if (!tagsData.links) tagsData.links = [];
 
     booksById = new Map(bible.books.map((b) => [b.id, b]));
 
@@ -347,6 +348,115 @@ el("clearSelectionBtn").addEventListener("click", clearSelection);
 el("tagSelectionBtn").addEventListener("click", () => {
   openTagAssign([...selection], true);
 });
+
+// ---------- Scripture cross-references (manual links) ----------
+
+let linkFromKeys = [];
+
+function refLabelForKeys(keys) {
+  if (!keys.length) return "";
+  const sorted = [...keys].sort((k1, k2) => {
+    const a = parseVerseKey(k1);
+    const b = parseVerseKey(k2);
+    return a.verse - b.verse;
+  });
+  const first = parseVerseKey(sorted[0]);
+  const last = parseVerseKey(sorted[sorted.length - 1]);
+  const book = booksById.get(first.bookId);
+  const bookName = book ? book.name : first.bookId;
+  if (first.bookId !== last.bookId || first.chapter !== last.chapter) {
+    return `${refLabel(first.bookId, first.chapter, first.verse)}–${refLabel(last.bookId, last.chapter, last.verse)}`;
+  }
+  const count = chapterVerseCountFor(book, first.chapter);
+  if (sorted.length === count && first.verse === 1 && last.verse === count) {
+    return `${bookName} ${first.chapter}`;
+  }
+  if (first.verse === last.verse) return `${bookName} ${first.chapter}:${first.verse}`;
+  return `${bookName} ${first.chapter}:${first.verse}-${last.verse}`;
+}
+
+el("linkSelectionBtn").addEventListener("click", () => {
+  linkFromKeys = [...selection];
+  if (!linkFromKeys.length) return;
+  el("linkFromRef").textContent = refLabelForKeys(linkFromKeys);
+  el("linkToInput").value = "";
+  el("linkNoteInput").value = "";
+  el("linkToError").classList.add("hidden");
+  el("linkOverlay").classList.remove("hidden");
+  el("linkToInput").focus();
+});
+
+el("linkCancelBtn").addEventListener("click", () => el("linkOverlay").classList.add("hidden"));
+
+document.addEventListener("click", (e) => {
+  if (e.target === el("linkOverlay")) el("linkOverlay").classList.add("hidden");
+});
+
+el("linkSaveBtn").addEventListener("click", () => {
+  const { resolvedKeys, unresolved } = parseBulkReferences(el("linkToInput").value);
+  if (!resolvedKeys.length || unresolved.length) {
+    el("linkToError").textContent = unresolved.length
+      ? `Couldn't recognize: "${unresolved[0]}"`
+      : "Enter a reference, e.g. Psalm 22 or Psalm 22:1-18.";
+    el("linkToError").classList.remove("hidden");
+    return;
+  }
+  tagsData.links.push({
+    id: crypto.randomUUID(),
+    a: linkFromKeys,
+    b: resolvedKeys,
+    note: el("linkNoteInput").value.trim(),
+  });
+  scheduleSave();
+  el("linkOverlay").classList.add("hidden");
+  if (currentView === "verse") renderVerseDetailLinks();
+});
+
+function linksForKey(key) {
+  return tagsData.links.filter((l) => l.a.includes(key) || l.b.includes(key));
+}
+
+function renderVerseDetailLinks() {
+  const panel = el("verseDetailLinks");
+  const list = el("verseDetailLinksList");
+  list.innerHTML = "";
+  const links = linksForKey(currentVerseKey);
+  panel.classList.toggle("hidden", links.length === 0);
+  if (!links.length) return;
+
+  links.forEach((link) => {
+    const otherKeys = link.a.includes(currentVerseKey) ? link.b : link.a;
+    const row = document.createElement("div");
+    row.className = "verse-link-row";
+
+    const refBtn = document.createElement("button");
+    refBtn.type = "button";
+    refBtn.className = "verse-link-ref";
+    refBtn.textContent = refLabelForKeys(otherKeys);
+    refBtn.addEventListener("click", () => goToVerseInChapter(otherKeys));
+    row.appendChild(refBtn);
+
+    if (link.note) {
+      const note = document.createElement("div");
+      note.className = "verse-link-note";
+      note.textContent = link.note;
+      row.appendChild(note);
+    }
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "note-clear-btn";
+    removeBtn.textContent = "Remove";
+    removeBtn.addEventListener("click", () => {
+      tagsData.links = tagsData.links.filter((l) => l.id !== link.id);
+      scheduleSave();
+      renderVerseDetailLinks();
+    });
+    row.appendChild(removeBtn);
+
+    list.appendChild(row);
+  });
+}
 el("studyWordsBtn").addEventListener("click", () => {
   if (selection.size === 1) openWordStudyPanel([...selection][0]);
 });
@@ -669,6 +779,7 @@ function openVerseDetail(key) {
   el("verseDetailNoteClear").classList.toggle("hidden", !el("verseDetailNotes").value);
 
   renderVerseDetailTags();
+  renderVerseDetailLinks();
   showView("verse");
 }
 
@@ -1865,6 +1976,7 @@ const HEATMAP_BUCKETS = 4;
 function renderInsightsView() {
   renderHeatmap();
   renderTagGraph();
+  renderRefGraph();
 }
 
 function renderHeatmap() {
@@ -2029,6 +2141,139 @@ function renderTagGraph() {
     label.setAttribute("x", String(isRight ? r + 4 : isLeft ? -(r + 4) : 0));
     label.setAttribute("y", "4");
     label.textContent = tag.name;
+    g.appendChild(label);
+
+    svg.appendChild(g);
+  });
+
+  wrap.appendChild(svg);
+}
+
+// ---------- Scripture reference graph (chapter-level, from manual links) ----------
+//
+// Verse-level nodes would be too dense to read (a single link can span a
+// whole chapter), so links are aggregated up to "bookId-chapter" nodes,
+// weighted by how many verse-pairs connect two chapters. Same fixed-circle
+// layout as the tag graph, for the same reason (no simulation dependency
+// needed at this scale).
+
+function chapterNodeId(key) {
+  const { bookId, chapter } = parseVerseKey(key);
+  return `${bookId}-${chapter}`;
+}
+
+function renderRefGraph() {
+  const wrap = el("refGraphWrap");
+  wrap.innerHTML = "";
+
+  if (!tagsData.links.length) {
+    wrap.innerHTML = '<div class="tag-graph-empty">Link verses together (select verses → "Link to…") to see connections here.</div>';
+    return;
+  }
+
+  const nodeIds = new Set();
+  const edgeWeight = new Map(); // "nodeA|nodeB" (sorted) -> count of links
+  const nodeLinkCount = new Map();
+
+  tagsData.links.forEach((link) => {
+    const aNodes = new Set(link.a.map(chapterNodeId));
+    const bNodes = new Set(link.b.map(chapterNodeId));
+    aNodes.forEach((n) => nodeIds.add(n));
+    bNodes.forEach((n) => nodeIds.add(n));
+    aNodes.forEach((aNode) => {
+      bNodes.forEach((bNode) => {
+        if (aNode === bNode) return;
+        const key = [aNode, bNode].sort().join("|");
+        edgeWeight.set(key, (edgeWeight.get(key) || 0) + 1);
+      });
+    });
+    [...aNodes, ...bNodes].forEach((n) => nodeLinkCount.set(n, (nodeLinkCount.get(n) || 0) + 1));
+  });
+
+  const nodes = [...nodeIds];
+  if (nodes.length < 2) {
+    wrap.innerHTML = '<div class="tag-graph-empty">Link at least two different chapters to see connections here.</div>';
+    return;
+  }
+
+  const nodeLabel = (nodeId) => {
+    const [bookId, chapter] = [nodeId.slice(0, nodeId.lastIndexOf("-")), nodeId.slice(nodeId.lastIndexOf("-") + 1)];
+    const book = booksById.get(bookId);
+    return `${book ? book.name : bookId} ${chapter}`;
+  };
+
+  const maxWeight = Math.max(1, ...edgeWeight.values());
+  const maxLinkCount = Math.max(1, ...nodeLinkCount.values());
+
+  const size = 360;
+  const cx = size / 2;
+  const cy = size / 2;
+  const radius = size / 2 - 55;
+  const positions = new Map();
+  nodes.forEach((nodeId, i) => {
+    const angle = (2 * Math.PI * i) / nodes.length - Math.PI / 2;
+    positions.set(nodeId, { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) });
+  });
+
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
+  svg.setAttribute("width", size);
+  svg.setAttribute("height", size);
+
+  edgeWeight.forEach((count, key) => {
+    const [aNode, bNode] = key.split("|");
+    const a = positions.get(aNode);
+    const b = positions.get(bNode);
+    if (!a || !b) return;
+
+    const line = document.createElementNS(SVG_NS, "line");
+    line.setAttribute("x1", a.x);
+    line.setAttribute("y1", a.y);
+    line.setAttribute("x2", b.x);
+    line.setAttribute("y2", b.y);
+    line.setAttribute("class", "tag-graph-edge");
+    line.setAttribute("stroke-width", String(1 + (count / maxWeight) * 6));
+    line.setAttribute("stroke-opacity", String(0.25 + (count / maxWeight) * 0.55));
+
+    const title = document.createElementNS(SVG_NS, "title");
+    title.textContent = `${nodeLabel(aNode)} + ${nodeLabel(bNode)}: ${count} link${count === 1 ? "" : "s"}`;
+    line.appendChild(title);
+
+    svg.appendChild(line);
+  });
+
+  nodes.forEach((nodeId) => {
+    const pos = positions.get(nodeId);
+    const count = nodeLinkCount.get(nodeId) || 0;
+    const r = 10 + (count / maxLinkCount) * 14;
+
+    const g = document.createElementNS(SVG_NS, "g");
+    g.setAttribute("class", "tag-graph-node");
+    g.setAttribute("transform", `translate(${pos.x}, ${pos.y})`);
+    g.addEventListener("click", () => {
+      const [bookId, chapter] = [nodeId.slice(0, nodeId.lastIndexOf("-")), Number(nodeId.slice(nodeId.lastIndexOf("-") + 1))];
+      selectBook(bookId, chapter);
+      showView("read");
+    });
+
+    const circle = document.createElementNS(SVG_NS, "circle");
+    circle.setAttribute("r", String(r));
+    circle.setAttribute("fill", "var(--heatmap-3)");
+    circle.setAttribute("stroke", "currentColor");
+    g.appendChild(circle);
+
+    const titleEl = document.createElementNS(SVG_NS, "title");
+    titleEl.textContent = `${nodeLabel(nodeId)}: ${count} link${count === 1 ? "" : "s"}`;
+    g.appendChild(titleEl);
+
+    const label = document.createElementNS(SVG_NS, "text");
+    label.setAttribute("class", "tag-graph-label");
+    const isRight = pos.x > cx + 5;
+    const isLeft = pos.x < cx - 5;
+    label.setAttribute("text-anchor", isRight ? "start" : isLeft ? "end" : "middle");
+    label.setAttribute("x", String(isRight ? r + 4 : isLeft ? -(r + 4) : 0));
+    label.setAttribute("y", "4");
+    label.textContent = nodeLabel(nodeId);
     g.appendChild(label);
 
     svg.appendChild(g);
