@@ -91,11 +91,27 @@ async function init() {
 
     if (anySmartTagsDefined()) await loadAnyDefinedSmartTagSources();
 
+    const lastView = localStorage.getItem("bible-study:lastView");
+
     const last = JSON.parse(localStorage.getItem("bible-study:lastLocation") || "null");
     if (last && booksById.has(last.bookId)) {
       selectBook(last.bookId, last.chapter || 1);
     } else {
       selectBook("genesis", 1);
+    }
+
+    if (lastView === "tags") {
+      renderTagsView();
+      showView("tags");
+    } else if (lastView === "topics") {
+      renderTopicsView();
+      showView("topics");
+    } else if (lastView === "insights") {
+      renderInsightsView();
+      showView("insights");
+    } else if (lastView === "settings") {
+      renderSharesSection();
+      showView("settings");
     }
 
     if (new URLSearchParams(window.location.search).get("yvConnect")) {
@@ -139,6 +155,10 @@ function showView(view) {
   };
   el("breadcrumb").textContent = breadcrumbs[view] || "";
 
+  if (["read", "tags", "topics", "insights", "settings"].includes(view)) {
+    localStorage.setItem("bible-study:lastView", view);
+  }
+
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.classList.toggle(
       "active",
@@ -152,6 +172,7 @@ function showView(view) {
 
 document.querySelectorAll(".nav-item").forEach((item) => {
   item.addEventListener("click", () => {
+    closeMobileNav();
     if (item.dataset.view === "read") {
       showView("read");
     } else if (item.dataset.view === "tags") {
@@ -183,6 +204,16 @@ el("collapseBtn").addEventListener("click", () => {
   const collapsed = document.querySelector(".app-shell").classList.toggle("sidebar-collapsed");
   localStorage.setItem("bible-study:sidebarCollapsed", collapsed ? "1" : "0");
 });
+
+function closeMobileNav() {
+  document.querySelector(".app-shell").classList.remove("mobile-nav-open");
+}
+
+el("mobileNavToggleBtn").addEventListener("click", () => {
+  document.querySelector(".app-shell").classList.toggle("mobile-nav-open");
+});
+
+el("sidebarBackdrop").addEventListener("click", closeMobileNav);
 
 if (localStorage.getItem("bible-study:sidebarCollapsed") === "1") {
   document.querySelector(".app-shell").classList.add("sidebar-collapsed");
@@ -3172,6 +3203,7 @@ function showLockScreen() {
   overlay.className = "modal-overlay";
   overlay.innerHTML = `
     <div class="modal lock-screen-modal">
+      <img src="assets/anchor.svg" class="lock-screen-logo" alt="Anchor" />
       <h2>Enter passphrase</h2>
       <form id="lockScreenForm">
         <input type="password" id="lockScreenInput" autocomplete="current-password" placeholder="Passphrase" required />
