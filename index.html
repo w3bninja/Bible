@@ -11,10 +11,11 @@
 </head>
 <body>
   <div class="app-shell">
-    <nav class="sidebar">
+    <div id="sidebarBackdrop" class="sidebar-backdrop"></div>
+    <nav class="sidebar" id="sidebar">
       <div class="sidebar-title">
-        <span class="title-full">Anchor</span>
-        <span class="title-mark">A</span>
+        <span class="title-full"><img src="assets/anchor.svg" class="logo-mark" alt="" /> Anchor</span>
+        <span class="title-mark"><img src="assets/anchor.svg" class="logo-mark" alt="Anchor" /></span>
       </div>
       <button class="nav-item active" data-view="read" title="Read">
         <svg viewBox="0 0 20 20" fill="none"><path d="M2 4.5C2 3.7 2.7 3 3.5 3H9v14H3.5c-.8 0-1.5-.7-1.5-1.5v-11ZM18 4.5c0-.8-.7-1.5-1.5-1.5H11v14h5.5c.8 0 1.5-.7 1.5-1.5v-11Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
@@ -41,6 +42,9 @@
     <main class="main">
       <div class="top-bar">
         <div class="top-bar-left">
+          <button id="mobileNavToggleBtn" class="icon-btn-outline mobile-nav-toggle" title="Open menu">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M3 5.5h14M3 10h14M3 14.5h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </button>
           <button id="collapseBtn" class="icon-btn-outline" title="Toggle sidebar">
             <svg viewBox="0 0 20 20" fill="none"><rect x="2" y="3" width="7" height="14" rx="1.5" stroke="currentColor" stroke-width="1.6"/><rect x="11" y="3" width="7" height="14" rx="1.5" stroke="currentColor" stroke-width="1.6"/></svg>
           </button>
