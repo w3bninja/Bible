@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body>
   <div class="app-shell">
@@ -17,6 +19,10 @@
         <span class="title-full"><img src="assets/anchor.svg" class="logo-mark" alt="" /> Anchor</span>
         <span class="title-mark"><img src="assets/anchor.svg" class="logo-mark" alt="Anchor" /></span>
       </div>
+      <button class="nav-item" data-view="dashboard" title="Dashboard">
+        <svg viewBox="0 0 20 20" fill="none"><rect x="2.5" y="2.5" width="6.5" height="6.5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="11" y="2.5" width="6.5" height="4" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="11" y="8.5" width="6.5" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="2.5" y="11" width="6.5" height="6.5" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>
+        <span>Dashboard</span>
+      </button>
       <button class="nav-item active" data-view="read" title="Read">
         <svg viewBox="0 0 20 20" fill="none"><path d="M2 4.5C2 3.7 2.7 3 3.5 3H9v14H3.5c-.8 0-1.5-.7-1.5-1.5v-11ZM18 4.5c0-.8-.7-1.5-1.5-1.5H11v14h5.5c.8 0 1.5-.7 1.5-1.5v-11Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
         <span>Read</span>
@@ -25,9 +31,9 @@
         <svg viewBox="0 0 20 20" fill="none"><path d="M10.6 2.5H4.8a1 1 0 0 0-1 1v5.8c0 .27.1.52.3.7l7 7c.4.4 1 .4 1.4 0l5.8-5.8c.4-.4.4-1 0-1.4l-7-7a1 1 0 0 0-.7-.3Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="6.8" cy="6.8" r="1" fill="currentColor"/></svg>
         <span>Tags</span>
       </button>
-      <button class="nav-item" data-view="topics" title="Topics">
-        <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.3"/><path d="M10 6v4l2.5 2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>Topics</span>
+      <button class="nav-item" data-view="studies" title="Studies">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M4 3.5h9a1.5 1.5 0 0 1 1.5 1.5v11H5.5A1.5 1.5 0 0 1 4 14.5v-11Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M4 14.5A1.5 1.5 0 0 1 5.5 13H14.5" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+        <span>Studies</span>
       </button>
       <button class="nav-item" data-view="insights" title="Insights">
         <svg viewBox="0 0 20 20" fill="none"><rect x="2.5" y="10" width="3" height="7.5" rx="0.8" stroke="currentColor" stroke-width="1.3"/><rect x="8.5" y="5.5" width="3" height="12" rx="0.8" stroke="currentColor" stroke-width="1.3"/><rect x="14.5" y="2.5" width="3" height="15" rx="0.8" stroke="currentColor" stroke-width="1.3"/></svg>
@@ -56,6 +62,29 @@
         <button id="searchToggleBtn" class="icon-btn" title="Search">
           <svg viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.4"/><path d="M17 17l-3.5-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
         </button>
+      </div>
+
+      <div id="dashboardView" class="view-content hidden">
+        <h1 class="page-heading">Dashboard</h1>
+        <div id="dashboardVotdCard" class="dashboard-votd-card">
+          <div class="dashboard-votd-label">Verse of the Day</div>
+          <div id="dashboardVerseText" class="dashboard-votd-text"></div>
+          <div id="dashboardVerseRef" class="dashboard-votd-ref"></div>
+        </div>
+        <div class="dashboard-stats">
+          <div class="dashboard-stat-tile">
+            <div id="dashboardStatTagged" class="dashboard-stat-value">0</div>
+            <div class="dashboard-stat-label">Verses tagged or noted</div>
+          </div>
+          <div class="dashboard-stat-tile">
+            <div id="dashboardStatNotes" class="dashboard-stat-value">0</div>
+            <div class="dashboard-stat-label">Verses with notes</div>
+          </div>
+          <div class="dashboard-stat-tile">
+            <div id="dashboardStatTags" class="dashboard-stat-value">0</div>
+            <div class="dashboard-stat-label">Tags created</div>
+          </div>
+        </div>
       </div>
 
       <div id="readView" class="view-content">
@@ -90,6 +119,13 @@
           <div class="notes-label">REFERENCES</div>
           <div id="verseDetailLinksList" class="verse-links-list"></div>
         </div>
+        <div id="verseDetailCrossRefs" class="verse-detail-links hidden">
+          <div class="notes-label-row">
+            <div class="notes-label">CROSS REFERENCES</div>
+            <button type="button" id="verseDetailCrossRefsExpandBtn" class="note-clear-btn">Open in sidebar</button>
+          </div>
+          <div id="verseDetailCrossRefsList" class="cross-ref-chip-list"></div>
+        </div>
         <div class="notes-label-row">
           <div class="notes-label">MY NOTES</div>
           <button type="button" id="verseDetailNoteClear" class="note-clear-btn hidden">Delete note</button>
@@ -123,28 +159,6 @@
         <div id="tagVerseList" class="verse-card-list"></div>
       </div>
 
-      <div id="topicsView" class="view-content hidden">
-        <div class="tags-page-header">
-          <h1 class="page-heading">Topics</h1>
-          <button type="button" id="newAutoTagBtn" class="btn btn-accent-solid btn-small">+ New Auto-Tag</button>
-        </div>
-
-        <div class="tags-subnav">
-          <button type="button" class="subnav-tab active" data-topictab="mine">Your Auto-Tags</button>
-          <button type="button" class="subnav-tab" data-topictab="browse">Browse Topics</button>
-        </div>
-
-        <div id="myAutoTagsTab">
-          <div id="autoTagsList" class="smart-tags-list"></div>
-        </div>
-
-        <div id="browseTopicsTab" class="hidden">
-          <input id="topicsSearchInput" type="search" class="search-input" placeholder="Search topics…" />
-          <div id="topicCategoryFilterBar" class="tag-filter-bar"></div>
-          <div id="topicsBrowseList" class="topics-browse-list"></div>
-        </div>
-      </div>
-
       <div id="topicReadingView" class="view-content hidden">
         <h1 class="page-heading" id="topicReadingHeading">Topic</h1>
         <div class="topic-reading-meta">
@@ -154,27 +168,139 @@
         <div id="topicReadingContent" class="topic-reading-content"></div>
       </div>
 
+      <div id="studiesView" class="view-content hidden">
+        <div class="tags-subnav">
+          <button type="button" class="subnav-tab active" data-studiestab="studies">Studies</button>
+          <button type="button" class="subnav-tab" data-studiestab="topics">Topics</button>
+        </div>
+
+        <div id="studiesStudiesPanel">
+          <div class="tags-page-header">
+            <h1 class="page-heading">Studies</h1>
+            <div class="tags-page-header-actions">
+              <button id="importTopicsBtn" class="btn btn-outline btn-small">Import from Topics…</button>
+              <button id="newStudyBtn" class="btn btn-accent-solid btn-small">+ New Study</button>
+            </div>
+          </div>
+          <p class="settings-section-hint">Group tags and standalone verses+notes under a named study — for when a single tag doesn't need a whole word, but a topic deserves its own space.</p>
+          <div id="studiesList" class="studies-list"></div>
+        </div>
+
+        <div id="studiesTopicsPanel" class="hidden">
+          <div class="tags-page-header">
+            <h1 class="page-heading">Topics</h1>
+            <button type="button" id="newAutoTagBtn" class="btn btn-accent-solid btn-small">+ New Auto-Tag</button>
+          </div>
+
+          <div class="tags-subnav">
+            <button type="button" class="subnav-tab active" data-topictab="mine">Your Auto-Tags</button>
+            <button type="button" class="subnav-tab" data-topictab="browse">Browse Topics</button>
+          </div>
+
+          <div id="myAutoTagsTab">
+            <div id="autoTagsList" class="smart-tags-list"></div>
+          </div>
+
+          <div id="browseTopicsTab" class="hidden">
+            <input id="topicsSearchInput" type="search" class="search-input" placeholder="Search topics…" />
+            <div id="topicCategoryFilterBar" class="tag-filter-bar"></div>
+            <div id="topicsBrowseList" class="topics-browse-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="studyDetailView" class="view-content hidden">
+        <div class="tags-page-header">
+          <div>
+            <h1 id="studyDetailName" class="page-heading"></h1>
+            <p id="studyDetailDescription" class="settings-section-hint"></p>
+          </div>
+          <div class="study-detail-actions">
+            <button id="studyEditBtn" class="btn btn-outline btn-small">Edit</button>
+            <button id="studyDeleteBtn" class="btn btn-outline btn-small">Delete</button>
+          </div>
+        </div>
+
+        <h2 class="settings-section-title">Linked Tags</h2>
+        <div id="studyTagChips" class="study-tag-chips"></div>
+        <select id="studyAddTagSelect" class="study-add-tag-select"></select>
+
+        <h2 class="settings-section-title">Verses &amp; Notes</h2>
+        <button id="studyAddEntryBtn" class="btn btn-outline btn-small">+ Add Verse</button>
+        <div id="studyEntriesList" class="study-entries-list"></div>
+
+        <h2 class="settings-section-title">From Linked Tags</h2>
+        <div id="studyTagVersesList" class="study-entries-list"></div>
+      </div>
+
       <div id="insightsView" class="view-content hidden">
         <h1 class="page-heading">Insights</h1>
-        <p class="settings-section-hint">Where you've tagged or noted a verse, across every book and chapter. Based on your own manual tags/notes only — auto-tags aren't counted, so this reflects what you've actually studied.</p>
-        <div class="heatmap-legend">
-          <span>Less</span>
-          <span class="heatmap-legend-cell" style="background:var(--heatmap-0)"></span>
-          <span class="heatmap-legend-cell" style="background:var(--heatmap-1)"></span>
-          <span class="heatmap-legend-cell" style="background:var(--heatmap-2)"></span>
-          <span class="heatmap-legend-cell" style="background:var(--heatmap-3)"></span>
-          <span class="heatmap-legend-cell" style="background:var(--heatmap-4)"></span>
-          <span>More</span>
+        <div class="tags-subnav">
+          <button type="button" class="subnav-tab active" data-insightstab="crossref">Cross Reference</button>
+          <button type="button" class="subnav-tab" data-insightstab="tags">Tags</button>
+          <button type="button" class="subnav-tab" data-insightstab="timeline">Timeline</button>
+          <button type="button" class="subnav-tab" data-insightstab="map">Map</button>
         </div>
-        <div id="heatmapGrid" class="heatmap-grid"></div>
 
-        <h2 class="settings-section-title tag-graph-title">Tag Connections</h2>
-        <p class="settings-section-hint">How often your manual tags appear together on the same verse. Line thickness reflects how much they overlap.</p>
-        <div id="tagGraphWrap" class="tag-graph-wrap"></div>
+        <div id="insightsCrossRefPanel">
+          <h2 class="settings-section-title tag-graph-title">Scripture References</h2>
+          <p class="settings-section-hint">Cross-references you've linked between passages (e.g. a quote and its source). Grouped by chapter since verse-level would be too dense to read.</p>
+          <div id="refGraphWrap" class="tag-graph-wrap"></div>
 
-        <h2 class="settings-section-title tag-graph-title">Scripture References</h2>
-        <p class="settings-section-hint">Cross-references you've linked between passages (e.g. a quote and its source). Grouped by chapter since verse-level would be too dense to read.</p>
-        <div id="refGraphWrap" class="tag-graph-wrap"></div>
+          <h2 class="settings-section-title tag-graph-title">Cross-Reference Map</h2>
+          <p class="settings-section-hint">How the Bible's books point back to each other, from OpenBible.info's cross-reference data — not your own tags/notes. Grouped by book and capped to the strongest connections, since verse-level would be unreadable at this scale.</p>
+          <div id="crossRefGraphWrap" class="tag-graph-wrap"></div>
+
+          <h2 class="settings-section-title tag-graph-title">Full Cross-Reference Map (every verse)</h2>
+          <p class="settings-section-hint">Every verse in the Bible placed around the circle in reading order, colored by book, with a thin arc for every cross-reference — ~151,000 of them. Too dense to click individual lines, but hover near the edge to spotlight one verse's own connections, click to open it.</p>
+          <div id="fullCrossRefMapWrap" class="full-crossref-wrap">
+            <canvas id="fullCrossRefCanvas" width="900" height="900"></canvas>
+            <div id="fullCrossRefTooltip" class="full-crossref-tooltip hidden"></div>
+          </div>
+        </div>
+
+        <div id="insightsTagsPanel" class="hidden">
+          <p class="settings-section-hint">Where you've tagged or noted a verse, across every book and chapter. Based on your own manual tags/notes only — auto-tags aren't counted, so this reflects what you've actually studied.</p>
+          <div class="heatmap-legend">
+            <span>Less</span>
+            <span class="heatmap-legend-cell" style="background:var(--heatmap-0)"></span>
+            <span class="heatmap-legend-cell" style="background:var(--heatmap-1)"></span>
+            <span class="heatmap-legend-cell" style="background:var(--heatmap-2)"></span>
+            <span class="heatmap-legend-cell" style="background:var(--heatmap-3)"></span>
+            <span class="heatmap-legend-cell" style="background:var(--heatmap-4)"></span>
+            <span>More</span>
+          </div>
+          <div id="heatmapGrid" class="heatmap-grid"></div>
+
+          <h2 class="settings-section-title tag-graph-title">Tag Connections</h2>
+          <p class="settings-section-hint">How often your manual tags appear together on the same verse. Line thickness reflects how much they overlap.</p>
+          <div id="tagGraphWrap" class="tag-graph-wrap"></div>
+        </div>
+
+        <div id="insightsTimelinePanel" class="hidden">
+          <h2 class="page-heading">Timeline: Adam to Jesus</h2>
+          <p class="settings-section-hint">The genealogy from Luke 3:23-38, Adam through Jesus. Adam through Jacob use ages Genesis 5 and 11 state directly (lifespan bars to scale, in years since Adam's creation) — Genesis doesn't give ages for anyone born after Jacob, so that stretch continues as a linked, undated chain rather than guessed dates.</p>
+          <div id="timelineDatedWrap" class="timeline-dated-wrap"></div>
+          <h2 class="settings-section-title">Continuing lineage (undated)</h2>
+          <p class="settings-section-hint">Judah to Jesus — no ages are stated in scripture for this stretch, so it's shown in order only.</p>
+          <div id="timelineUndatedList" class="timeline-undated-list"></div>
+
+          <h2 class="settings-section-title">Matthew's line (David to Jesus via Solomon)</h2>
+          <p class="settings-section-hint">Matthew 1 traces a different line from David to Jesus than Luke 3 does — through Solomon and the kings of Judah, not Nathan. Both converge on Joseph; see ldolphin.org/2adams.html for more on the two genealogies.</p>
+          <div id="timelineMatthewList" class="timeline-undated-list"></div>
+        </div>
+
+        <div id="insightsMapPanel" class="hidden">
+          <h2 class="page-heading">Bible Places</h2>
+          <p class="settings-section-hint">495 places geocoded from OpenBible.info's data (click a marker for its verses) plus 179 journeys/campaigns from UBS Project MARBLE's Bible Routes (dashed lines — hover for the title; these aren't verse-linked, the source data doesn't tie them to specific passages).</p>
+          <div class="map-layer-toggles">
+            <label><input type="checkbox" id="mapTogglePlaces" checked /> Places</label>
+            <label><input type="checkbox" id="mapToggleRoutes" checked /> Routes</label>
+          </div>
+          <div id="mapPersonFilterChips" class="map-person-chips"></div>
+          <div id="mapCategoryFilterChips" class="map-person-chips"></div>
+          <div id="placesMapContainer" class="places-map-container"></div>
+        </div>
       </div>
 
       <div id="settingsView" class="view-content hidden">
@@ -273,11 +399,22 @@
         <svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
       </button>
     </div>
-    <div id="wordStudyLoading" class="word-study-loading hidden">Loading word data…</div>
-    <div id="wordStudyChips" class="word-study-chips"></div>
-    <div id="wordStudyDetail" class="word-study-detail hidden">
-      <button id="wordStudyBackBtn" class="word-study-back-btn">‹ All words</button>
-      <div class="word-study-card" id="wordStudyCard"></div>
+    <div class="word-study-tabs">
+      <button type="button" class="word-study-tab active" id="wordStudyTabBtn" data-tab="word">Study</button>
+      <button type="button" class="word-study-tab" id="crossRefsTabBtn" data-tab="crossrefs">Cross References</button>
+    </div>
+
+    <div id="wordStudyTabPanel" class="word-study-tab-panel">
+      <div id="wordStudyLoading" class="word-study-loading hidden">Loading word data…</div>
+      <div id="wordStudyChips" class="word-study-chips"></div>
+      <div id="wordStudyDetail" class="word-study-detail hidden">
+        <button id="wordStudyBackBtn" class="word-study-back-btn">‹ All words</button>
+        <div class="word-study-card" id="wordStudyCard"></div>
+      </div>
+    </div>
+
+    <div id="crossRefsTabPanel" class="word-study-tab-panel hidden">
+      <div id="sidebarCrossRefsList" class="verse-links-list"></div>
     </div>
   </div>
 
@@ -326,6 +463,72 @@
         <div class="modal-actions">
           <button type="button" id="newTagCancel" class="btn btn-outline">Cancel</button>
           <button type="submit" class="btn btn-accent-solid" id="newTagSubmitBtn">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="newStudyOverlay" class="modal-overlay hidden">
+    <div class="modal">
+      <h2 id="newStudyModalTitle">New Study</h2>
+      <form id="newStudyForm">
+        <label>Name
+          <input type="text" id="newStudyName" required maxlength="60" placeholder="e.g. The Faith of Abraham" />
+        </label>
+        <label>Description (optional)
+          <textarea id="newStudyDescription" maxlength="500" rows="3" placeholder="What's this study about?"></textarea>
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="newStudyCancel" class="btn btn-outline">Cancel</button>
+          <button type="submit" class="btn btn-accent-solid" id="newStudySubmitBtn">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="importTopicsOverlay" class="modal-overlay hidden">
+    <div class="modal import-topics-modal">
+      <h2>Import from Topics</h2>
+      <p class="settings-section-hint">Pick one or more entries from Nave's Topical Dictionary. Each becomes its own Study, pre-filled with that topic's verses — no tagging required.</p>
+      <div class="import-topics-controls">
+        <input type="text" id="importTopicsSearch" placeholder="Search topics…" />
+        <select id="importTopicsCategoryFilter">
+          <option value="">All categories</option>
+          <option value="topic">Topics</option>
+          <option value="person">People</option>
+          <option value="place">Places</option>
+        </select>
+      </div>
+      <div id="importTopicsCount" class="import-topics-count"></div>
+      <div id="importTopicsList" class="import-topics-list"></div>
+      <div class="modal-actions">
+        <button type="button" id="importTopicsCancel" class="btn btn-outline">Cancel</button>
+        <button type="button" id="importTopicsSubmit" class="btn btn-accent-solid">Import selected</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="addStudyEntryOverlay" class="modal-overlay hidden">
+    <div class="modal">
+      <h2>Add Verse to Study</h2>
+      <form id="addStudyEntryForm">
+        <label>Book
+          <select id="studyEntryBook" required></select>
+        </label>
+        <div class="study-entry-refs">
+          <label>Chapter
+            <input type="number" id="studyEntryChapter" min="1" required />
+          </label>
+          <label>Verse
+            <input type="number" id="studyEntryVerse" min="1" required />
+          </label>
+        </div>
+        <label>Note (optional)
+          <textarea id="studyEntryNote" maxlength="2000" rows="4" placeholder="Your thoughts on this verse…"></textarea>
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="addStudyEntryCancel" class="btn btn-outline">Cancel</button>
+          <button type="submit" class="btn btn-accent-solid">Add</button>
         </div>
       </form>
     </div>

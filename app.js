@@ -2,6 +2,9 @@
 let bible = null;
 let booksById = new Map();
 let tagsData = { tags: [], verseTags: {}, links: [] }; // tags: [{id,name,hue}], verseTags[key] = { tagIds:[], note:'' }, links: [{id, a:[keys], b:[keys], note}]
+let categoriesData = { categories: [] }; // categories: [{id, name, description, tagIds:[], entries:[{id,key,note}]}]
+let currentStudyId = null; // for study detail view
+let editingStudyId = null; // set when the New Study modal is in edit mode
 
 let currentBookId = null;
 let currentChapter = 1;
@@ -27,6 +30,7 @@ let searchBookFilter = null; // null | bookId
 
 let saveTimer = null;
 let notesSaveTimer = null;
+let categoriesSaveTimer = null;
 
 const HUE_PRESETS = [10, 40, 70, 145, 190, 250, 290, 330];
 
@@ -77,15 +81,18 @@ async function fetchJSON(url) {
 
 async function init() {
   try {
-    const [bibleData, tagsJson] = await Promise.all([
+    const [bibleData, tagsJson, categoriesJson] = await Promise.all([
       fetchJSON("data/bible.json"),
       fetchJSON("/api/tags").catch(() => ({ tags: [], verseTags: {} })),
+      fetchJSON("/api/categories").catch(() => ({ categories: [] })),
     ]);
     bible = bibleData;
     tagsData = tagsJson;
     if (!tagsData.tags) tagsData.tags = [];
     if (!tagsData.verseTags) tagsData.verseTags = {};
     if (!tagsData.links) tagsData.links = [];
+    categoriesData = categoriesJson;
+    if (!categoriesData.categories) categoriesData.categories = [];
 
     booksById = new Map(bible.books.map((b) => [b.id, b]));
 
@@ -100,14 +107,18 @@ async function init() {
       selectBook("genesis", 1);
     }
 
-    if (lastView === "tags") {
+    if (lastView === "dashboard") {
+      renderDashboardView();
+      showView("dashboard");
+    } else if (lastView === "tags") {
       renderTagsView();
       showView("tags");
-    } else if (lastView === "topics") {
-      renderTopicsView();
-      showView("topics");
-    } else if (lastView === "insights") {
+    } else if (lastView === "topics" || lastView === "studies") {
+      setStudiesTab(lastView === "topics" ? "topics" : "studies");
+      showView("studies");
+    } else if (lastView === "timeline" || lastView === "insights") {
       renderInsightsView();
+      setInsightsTab(lastView === "timeline" ? "timeline" : "crossref");
       showView("insights");
     } else if (lastView === "settings") {
       renderSharesSection();
@@ -130,32 +141,36 @@ async function init() {
 function showView(view) {
   if (view !== "read") stopReading();
   currentView = view;
+  el("dashboardView").classList.toggle("hidden", view !== "dashboard");
   el("readView").classList.toggle("hidden", view !== "read");
   el("verseView").classList.toggle("hidden", view !== "verse");
   el("tagsView").classList.toggle("hidden", view !== "tags");
-  el("topicsView").classList.toggle("hidden", view !== "topics");
   el("topicReadingView").classList.toggle("hidden", view !== "topicReading");
+  el("studiesView").classList.toggle("hidden", view !== "studies");
+  el("studyDetailView").classList.toggle("hidden", view !== "studyDetail");
   el("insightsView").classList.toggle("hidden", view !== "insights");
   el("settingsView").classList.toggle("hidden", view !== "settings");
   el("searchView").classList.toggle("hidden", view !== "search");
 
-  const showBack = view === "verse" || view === "search" || view === "topicReading";
+  const showBack = view === "verse" || view === "search" || view === "topicReading" || view === "studyDetail";
   el("backBtn").classList.toggle("hidden", !showBack);
   el("collapseBtn").classList.toggle("hidden", showBack);
 
   const breadcrumbs = {
+    dashboard: "Dashboard",
     read: "Reading",
     verse: "Verse & Notes",
     tags: "Your tagged verses",
-    topics: "Auto-tags & topics",
     topicReading: "Topic reading",
+    studies: "Studies",
+    studyDetail: "Study",
     insights: "Insights",
     settings: "Settings",
     search: "Search",
   };
   el("breadcrumb").textContent = breadcrumbs[view] || "";
 
-  if (["read", "tags", "topics", "insights", "settings"].includes(view)) {
+  if (["dashboard", "read", "tags", "studies", "insights", "settings"].includes(view)) {
     localStorage.setItem("bible-study:lastView", view);
   }
 
@@ -165,7 +180,8 @@ function showView(view) {
       item.dataset.view === view ||
         (view === "verse" && item.dataset.view === "read") ||
         (view === "search" && item.dataset.view === "read") ||
-        (view === "topicReading" && item.dataset.view === "topics")
+        (view === "topicReading" && item.dataset.view === "studies") ||
+        (view === "studyDetail" && item.dataset.view === "studies")
     );
   });
 }
@@ -173,16 +189,20 @@ function showView(view) {
 document.querySelectorAll(".nav-item").forEach((item) => {
   item.addEventListener("click", () => {
     closeMobileNav();
-    if (item.dataset.view === "read") {
+    if (item.dataset.view === "dashboard") {
+      renderDashboardView();
+      showView("dashboard");
+    } else if (item.dataset.view === "read") {
       showView("read");
     } else if (item.dataset.view === "tags") {
       renderTagsView();
       showView("tags");
-    } else if (item.dataset.view === "topics") {
-      renderTopicsView();
-      showView("topics");
+    } else if (item.dataset.view === "studies") {
+      setStudiesTab("studies");
+      showView("studies");
     } else if (item.dataset.view === "insights") {
       renderInsightsView();
+      setInsightsTab("crossref");
       showView("insights");
     } else if (item.dataset.view === "settings") {
       renderSharesSection();
@@ -193,8 +213,11 @@ document.querySelectorAll(".nav-item").forEach((item) => {
 
 el("backBtn").addEventListener("click", () => {
   if (currentView === "topicReading") {
-    renderTopicsView();
-    showView("topics");
+    setStudiesTab("topics");
+    showView("studies");
+  } else if (currentView === "studyDetail") {
+    renderStudiesView();
+    showView("studies");
   } else {
     showView("read");
   }
@@ -811,7 +834,93 @@ function openVerseDetail(key) {
 
   renderVerseDetailTags();
   renderVerseDetailLinks();
+  renderVerseDetailCrossRefs();
   showView("verse");
+}
+
+// ---------- Cross references (OpenBible.info / Treasury of Scripture Knowledge) ----------
+//
+// Read-only reference data, never touches tagsData — same "external library,
+// not yours to edit" treatment as topics/persons.
+
+let crossReferencesData = null;
+let crossReferencesPromise = null;
+
+function ensureCrossReferencesLoaded() {
+  if (crossReferencesData) return Promise.resolve();
+  if (!crossReferencesPromise) {
+    crossReferencesPromise = fetchJSON("data/cross-references.json").then((d) => {
+      crossReferencesData = d;
+    });
+  }
+  return crossReferencesPromise;
+}
+
+function renderCrossRefChips(container, key, onNavigate) {
+  ensureCrossReferencesLoaded().then(() => {
+    const refs = (crossReferencesData && crossReferencesData[key]) || [];
+    container.innerHTML = "";
+    if (!refs.length) {
+      container.innerHTML = '<div class="empty-msg">No cross-references for this verse.</div>';
+      return;
+    }
+    refs.forEach((ref) => {
+      const { bookId, chapter, verse } = parseVerseKey(ref.key);
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "cross-ref-chip";
+      chip.textContent = refLabel(bookId, chapter, verse);
+      chip.title = crossRefPreview(ref.key);
+      chip.addEventListener("click", () => onNavigate(ref.key));
+      container.appendChild(chip);
+    });
+  });
+}
+
+function crossRefPreview(key) {
+  const { bookId, chapter, verse } = parseVerseKey(key);
+  const book = booksById.get(bookId);
+  return book ? book.chapters[chapter - 1].verses[verse - 1] : "";
+}
+
+function renderVerseDetailCrossRefs() {
+  const panel = el("verseDetailCrossRefs");
+  const key = currentVerseKey;
+  ensureCrossReferencesLoaded().then(() => {
+    if (currentVerseKey !== key) return; // user navigated away before this resolved
+    const refs = (crossReferencesData && crossReferencesData[key]) || [];
+    panel.classList.toggle("hidden", refs.length === 0);
+  });
+  renderCrossRefChips(el("verseDetailCrossRefsList"), key, (otherKey) => openVerseDetail(otherKey));
+}
+
+el("verseDetailCrossRefsExpandBtn").addEventListener("click", () => openCrossRefsSidebar(currentVerseKey));
+
+// ---------- Word study / cross-reference sidebar tabs ----------
+
+let sidebarActiveTab = "word";
+
+function setSidebarTab(tab) {
+  sidebarActiveTab = tab;
+  el("wordStudyTabBtn").classList.toggle("active", tab === "word");
+  el("crossRefsTabBtn").classList.toggle("active", tab === "crossrefs");
+  el("wordStudyTabPanel").classList.toggle("hidden", tab !== "word");
+  el("crossRefsTabPanel").classList.toggle("hidden", tab !== "crossrefs");
+}
+
+el("wordStudyTabBtn").addEventListener("click", () => setSidebarTab("word"));
+el("crossRefsTabBtn").addEventListener("click", () => setSidebarTab("crossrefs"));
+
+function openCrossRefsSidebar(key) {
+  wordStudyVerseKey = key;
+  const { bookId, chapter, verse } = parseVerseKey(key);
+  el("wordStudyRef").textContent = refLabel(bookId, chapter, verse);
+  el("wordStudyPanel").classList.remove("hidden");
+  el("wordStudyDetail").classList.add("hidden");
+  el("wordStudyChips").classList.add("hidden");
+  el("wordStudyLoading").classList.add("hidden");
+  setSidebarTab("crossrefs");
+  renderCrossRefChips(el("sidebarCrossRefsList"), key, (otherKey) => openCrossRefsSidebar(otherKey));
 }
 
 function renderVerseDetailTags() {
@@ -1133,7 +1242,7 @@ el("newTagForm").addEventListener("submit", (e) => {
     renderTagAssignList();
     if (currentView === "verse") renderVerseDetailTags();
     if (currentView === "tags") renderTagsView();
-    if (currentView === "topics") renderTopicsView();
+    if (currentView === "studies" && !el("studiesTopicsPanel").classList.contains("hidden")) renderTopicsView();
     if (wordStudyConcNum) renderWordStudyCard(wordStudyConcNum, [wordStudyConcNum]);
   };
   if (rule && rule.strongs) ensureConcordanceLoaded().then(finish);
@@ -1993,6 +2102,575 @@ el("bulkImportContinueBtn").addEventListener("click", () => {
   openTagAssign(bulkImportResolvedKeys, true);
 });
 
+// ---------- Dashboard ----------
+
+// A curated pool of well-known, standalone verses for Verse of the Day —
+// deliberately not a uniform-random pick over the whole Bible, since that
+// can just as easily land on a genealogy or a verse that needs a page of
+// context to not read strangely out of place.
+const VOTD_POOL = [
+  "genesis-1-1", "genesis-1-27", "genesis-28-15", "exodus-14-14", "exodus-15-2",
+  "deuteronomy-31-6", "joshua-1-9", "1samuel-16-7", "1chronicles-16-11", "nehemiah-8-10",
+  "job-19-25", "psalms-19-1", "psalms-23-1", "psalms-27-1", "psalms-28-7", "psalms-34-8",
+  "psalms-37-4", "psalms-46-1", "psalms-51-10", "psalms-56-3", "psalms-62-1", "psalms-91-1",
+  "psalms-100-5", "psalms-118-24", "psalms-119-105", "psalms-121-1", "psalms-127-1",
+  "psalms-139-14", "psalms-143-8", "psalms-145-18", "psalms-147-3", "proverbs-3-5",
+  "proverbs-3-6", "proverbs-16-3", "proverbs-16-9", "proverbs-18-10", "proverbs-22-6",
+  "ecclesiastes-3-1", "isaiah-9-6", "isaiah-26-3", "isaiah-40-8", "isaiah-40-31",
+  "isaiah-41-10", "isaiah-43-2", "isaiah-53-5", "isaiah-55-8", "isaiah-55-11",
+  "jeremiah-17-7", "jeremiah-29-11", "jeremiah-33-3", "lamentations-3-22", "lamentations-3-23",
+  "micah-6-8", "nahum-1-7", "habakkuk-3-19", "zephaniah-3-17", "malachi-3-10",
+  "matthew-5-16", "matthew-6-33", "matthew-6-34", "matthew-7-7", "matthew-11-28",
+  "matthew-19-26", "matthew-28-19", "matthew-28-20", "mark-11-24", "mark-12-30",
+  "luke-1-37", "luke-6-31", "luke-12-25", "john-1-1", "john-3-16", "john-8-12",
+  "john-10-10", "john-11-25", "john-13-34", "john-14-6", "john-14-27", "john-15-5",
+  "john-15-13", "john-16-33", "acts-1-8", "romans-5-8", "romans-8-1", "romans-8-28",
+  "romans-8-31", "romans-8-38", "romans-10-9", "romans-12-2", "romans-12-12",
+  "romans-15-13", "1corinthians-10-13", "1corinthians-13-4", "1corinthians-13-13",
+  "1corinthians-16-14", "2corinthians-1-3", "2corinthians-4-16", "2corinthians-5-7",
+  "2corinthians-5-17", "2corinthians-9-8", "2corinthians-12-9", "galatians-2-20",
+  "galatians-5-22", "galatians-6-9", "ephesians-2-8", "ephesians-2-10", "ephesians-3-20",
+  "ephesians-4-32", "ephesians-6-10", "philippians-1-6", "philippians-4-6", "philippians-4-7",
+  "philippians-4-8", "philippians-4-13", "philippians-4-19", "colossians-3-2",
+  "colossians-3-23", "1thessalonians-5-16", "1thessalonians-5-18", "2thessalonians-3-3",
+  "1timothy-4-12", "2timothy-1-7", "hebrews-4-16", "hebrews-11-1", "hebrews-12-1",
+  "hebrews-13-5", "james-1-2", "james-1-5", "james-1-17", "james-4-8", "1peter-3-15",
+  "1peter-5-7", "2peter-1-3", "1john-1-9", "1john-4-8", "1john-4-18", "1john-4-19",
+  "1john-5-14", "revelation-3-20", "revelation-21-4",
+];
+
+function verseOfDayKey() {
+  const dateStr = new Date().toISOString().slice(0, 10);
+  let hash = 0;
+  for (let i = 0; i < dateStr.length; i++) {
+    hash = (hash * 31 + dateStr.charCodeAt(i)) >>> 0;
+  }
+  return VOTD_POOL[hash % VOTD_POOL.length];
+}
+
+function renderDashboardView() {
+  const key = verseOfDayKey();
+  const { bookId, chapter, verse } = parseVerseKey(key);
+  const book = booksById.get(bookId);
+  el("dashboardVerseText").textContent = book.chapters[chapter - 1].verses[verse - 1];
+  el("dashboardVerseRef").textContent = refLabel(bookId, chapter, verse);
+  el("dashboardVotdCard").dataset.verseKey = key;
+
+  const entries = Object.values(tagsData.verseTags);
+  el("dashboardStatTagged").textContent = entries.length;
+  el("dashboardStatNotes").textContent = entries.filter((e) => e.note).length;
+  el("dashboardStatTags").textContent = tagsData.tags.filter((t) => !isSmartTag(t)).length;
+}
+
+el("dashboardVotdCard").addEventListener("click", () => {
+  const key = el("dashboardVotdCard").dataset.verseKey;
+  if (key) openVerseDetail(key);
+});
+
+// ---------- Studies (tag categories) ----------
+
+function scheduleSaveCategories() {
+  clearTimeout(categoriesSaveTimer);
+  categoriesSaveTimer = setTimeout(saveCategories, 500);
+}
+
+async function saveCategories() {
+  try {
+    const res = await fetch("/api/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sitePasswordHeaders() },
+      body: JSON.stringify(categoriesData),
+    });
+    if (res.status === 401) {
+      showLockScreen();
+      return;
+    }
+    if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function renderStudiesView() {
+  const list = el("studiesList");
+  list.innerHTML = "";
+
+  if (!categoriesData.categories.length) {
+    list.innerHTML = '<div class="empty-msg">No studies yet. Create one to group tags and verses under a named topic.</div>';
+    return;
+  }
+
+  categoriesData.categories.forEach((study) => {
+    const card = document.createElement("div");
+    card.className = "study-card";
+    const verseCount = study.entries.length;
+    const tagCount = study.tagIds.length;
+    card.innerHTML = `
+      <div class="study-card-name">${escapeHtml(study.name)}</div>
+      <div class="study-card-desc">${escapeHtml(study.description || "")}</div>
+      <div class="study-card-meta">${tagCount} tag${tagCount === 1 ? "" : "s"} · ${verseCount} verse${verseCount === 1 ? "" : "s"}</div>
+    `;
+    card.addEventListener("click", () => openStudyDetail(study.id));
+    list.appendChild(card);
+  });
+}
+
+function openStudyDetail(id) {
+  currentStudyId = id;
+  renderStudyDetail();
+  showView("studyDetail");
+}
+
+function renderStudyDetail() {
+  const study = categoriesData.categories.find((c) => c.id === currentStudyId);
+  if (!study) {
+    renderStudiesView();
+    showView("studies");
+    return;
+  }
+
+  el("studyDetailName").textContent = study.name;
+  el("studyDetailDescription").textContent = study.description || "";
+  el("studyDetailDescription").classList.toggle("hidden", !study.description);
+
+  const chipsContainer = el("studyTagChips");
+  chipsContainer.innerHTML = "";
+  study.tagIds.forEach((tagId) => {
+    const tag = tagsData.tags.find((t) => t.id === tagId);
+    if (!tag) return;
+    const { bg, text: fg } = chipColors(tag.hue);
+    const chip = document.createElement("button");
+    chip.className = "tag-chip-removable";
+    chip.style.background = bg;
+    chip.style.color = fg;
+    chip.innerHTML = `<span>${escapeHtml(tag.name)}</span><span class="x">×</span>`;
+    chip.addEventListener("click", () => {
+      study.tagIds = study.tagIds.filter((id) => id !== tagId);
+      scheduleSaveCategories();
+      renderStudyDetail();
+    });
+    chipsContainer.appendChild(chip);
+  });
+
+  const addTagSelect = el("studyAddTagSelect");
+  addTagSelect.innerHTML = '<option value="">+ link a tag…</option>';
+  tagsData.tags
+    .filter((t) => !isSmartTag(t) && !study.tagIds.includes(t.id))
+    .forEach((tag) => {
+      const opt = document.createElement("option");
+      opt.value = tag.id;
+      opt.textContent = tag.name;
+      addTagSelect.appendChild(opt);
+    });
+
+  const entriesList = el("studyEntriesList");
+  entriesList.innerHTML = "";
+  if (!study.entries.length) {
+    entriesList.innerHTML = '<div class="empty-msg">No verses added to this study yet.</div>';
+  } else {
+    study.entries
+      .slice()
+      .sort((a, b) => {
+        const pa = parseVerseKey(a.key);
+        const pb = parseVerseKey(b.key);
+        const oa = booksById.get(pa.bookId)?.order ?? 0;
+        const ob = booksById.get(pb.bookId)?.order ?? 0;
+        return oa - ob || pa.chapter - pb.chapter || pa.verse - pb.verse;
+      })
+      .forEach((entry) => {
+        const { bookId, chapter, verse } = parseVerseKey(entry.key);
+        const book = booksById.get(bookId);
+        const text = book ? book.chapters[chapter - 1].verses[verse - 1] : "";
+        const card = document.createElement("div");
+        card.className = "study-entry-card";
+        card.innerHTML = `
+          <div class="study-entry-ref">${escapeHtml(refLabel(bookId, chapter, verse))}</div>
+          <div class="study-entry-text">${escapeHtml(text)}</div>
+          ${entry.note ? `<div class="study-entry-note">${escapeHtml(entry.note)}</div>` : ""}
+        `;
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.className = "btn btn-outline btn-small";
+        removeBtn.textContent = "Remove";
+        removeBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          study.entries = study.entries.filter((en) => en.id !== entry.id);
+          scheduleSaveCategories();
+          renderStudyDetail();
+        });
+        card.appendChild(removeBtn);
+        card.addEventListener("click", () => openVerseDetail(entry.key));
+        entriesList.appendChild(card);
+      });
+  }
+
+  const tagVersesList = el("studyTagVersesList");
+  tagVersesList.innerHTML = "";
+  const rollupKeys = new Set();
+  study.tagIds.forEach((tagId) => {
+    Object.keys(tagsData.verseTags).forEach((key) => {
+      if ((tagsData.verseTags[key].tagIds || []).includes(tagId)) rollupKeys.add(key);
+    });
+  });
+  if (!rollupKeys.size) {
+    tagVersesList.innerHTML = study.tagIds.length
+      ? '<div class="empty-msg">No verses tagged with these tags yet.</div>'
+      : '<div class="empty-msg">Link a tag above to pull in its tagged verses.</div>';
+  } else {
+    Array.from(rollupKeys)
+      .map((key) => ({ key, ...parseVerseKey(key) }))
+      .sort((a, b) => {
+        const oa = booksById.get(a.bookId)?.order ?? 0;
+        const ob = booksById.get(b.bookId)?.order ?? 0;
+        return oa - ob || a.chapter - b.chapter || a.verse - b.verse;
+      })
+      .forEach(({ key, bookId, chapter, verse }) => {
+        const book = booksById.get(bookId);
+        const text = book.chapters[chapter - 1].verses[verse - 1];
+        const note = tagsData.verseTags[key]?.note || "";
+        const card = document.createElement("div");
+        card.className = "study-entry-card";
+        card.innerHTML = `
+          <div class="study-entry-ref">${escapeHtml(refLabel(bookId, chapter, verse))}</div>
+          <div class="study-entry-text">${escapeHtml(text)}</div>
+          ${note ? `<div class="study-entry-note">${escapeHtml(note)}</div>` : ""}
+        `;
+        card.addEventListener("click", () => openVerseDetail(key));
+        tagVersesList.appendChild(card);
+      });
+  }
+}
+
+el("studyAddTagSelect").addEventListener("change", () => {
+  const tagId = el("studyAddTagSelect").value;
+  if (!tagId) return;
+  const study = categoriesData.categories.find((c) => c.id === currentStudyId);
+  if (!study || study.tagIds.includes(tagId)) return;
+  study.tagIds.push(tagId);
+  scheduleSaveCategories();
+  renderStudyDetail();
+});
+
+el("newStudyBtn").addEventListener("click", () => {
+  editingStudyId = null;
+  el("newStudyModalTitle").textContent = "New Study";
+  el("newStudySubmitBtn").textContent = "Create";
+  el("newStudyName").value = "";
+  el("newStudyDescription").value = "";
+  el("newStudyOverlay").classList.remove("hidden");
+});
+
+el("studyEditBtn").addEventListener("click", () => {
+  const study = categoriesData.categories.find((c) => c.id === currentStudyId);
+  if (!study) return;
+  editingStudyId = study.id;
+  el("newStudyModalTitle").textContent = "Edit Study";
+  el("newStudySubmitBtn").textContent = "Save";
+  el("newStudyName").value = study.name;
+  el("newStudyDescription").value = study.description || "";
+  el("newStudyOverlay").classList.remove("hidden");
+});
+
+el("newStudyCancel").addEventListener("click", () => {
+  editingStudyId = null;
+  el("newStudyOverlay").classList.add("hidden");
+});
+
+el("newStudyForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const name = el("newStudyName").value.trim();
+  if (!name) return;
+  const description = el("newStudyDescription").value.trim();
+
+  if (editingStudyId) {
+    const study = categoriesData.categories.find((c) => c.id === editingStudyId);
+    study.name = name;
+    study.description = description;
+    renderStudyDetail();
+  } else {
+    categoriesData.categories.push({ id: crypto.randomUUID(), name, description, tagIds: [], entries: [] });
+    renderStudiesView();
+  }
+
+  editingStudyId = null;
+  scheduleSaveCategories();
+  el("newStudyOverlay").classList.add("hidden");
+});
+
+el("studyDeleteBtn").addEventListener("click", () => {
+  const study = categoriesData.categories.find((c) => c.id === currentStudyId);
+  if (!study) return;
+  if (!confirm(`Delete "${study.name}"? This won't delete the linked tags or your notes, only this study's grouping and any standalone verse entries.`)) return;
+  categoriesData.categories = categoriesData.categories.filter((c) => c.id !== currentStudyId);
+  scheduleSaveCategories();
+  renderStudiesView();
+  showView("studies");
+});
+
+// ---------- Import Studies from Topics ----------
+
+let selectedImportTopics = new Set();
+const IMPORT_TOPICS_RESULT_CAP = 150;
+
+el("importTopicsBtn").addEventListener("click", () => {
+  selectedImportTopics = new Set();
+  el("importTopicsSearch").value = "";
+  el("importTopicsCategoryFilter").value = "";
+  Promise.all([ensureTopicsLoaded(), ensureTopicCategoriesLoaded()]).then(() => {
+    renderImportTopicsList();
+    el("importTopicsOverlay").classList.remove("hidden");
+  });
+});
+
+el("importTopicsCancel").addEventListener("click", () => {
+  el("importTopicsOverlay").classList.add("hidden");
+});
+
+el("importTopicsSearch").addEventListener("input", renderImportTopicsList);
+el("importTopicsCategoryFilter").addEventListener("change", renderImportTopicsList);
+
+function renderImportTopicsList() {
+  const query = el("importTopicsSearch").value.trim().toLowerCase();
+  const categoryFilter = el("importTopicsCategoryFilter").value;
+  const existingNames = new Set(categoriesData.categories.map((c) => c.name.toLowerCase()));
+
+  let names = Object.keys(topicsData || {});
+  if (query) names = names.filter((n) => n.toLowerCase().includes(query));
+  if (categoryFilter) names = names.filter((n) => (topicCategories ? topicCategories[n] : null) === categoryFilter);
+  names.sort();
+
+  el("importTopicsCount").textContent = `${names.length} match${names.length === 1 ? "" : "es"}${
+    names.length > IMPORT_TOPICS_RESULT_CAP ? ` (showing first ${IMPORT_TOPICS_RESULT_CAP})` : ""
+  }`;
+
+  const truncated = names.length > IMPORT_TOPICS_RESULT_CAP;
+  if (truncated) names = names.slice(0, IMPORT_TOPICS_RESULT_CAP);
+
+  const list = el("importTopicsList");
+  list.innerHTML = "";
+  if (!names.length) {
+    list.innerHTML = '<div class="empty-msg">No topics match.</div>';
+    return;
+  }
+
+  names.forEach((name) => {
+    const alreadyImported = existingNames.has(name.toLowerCase());
+    const row = document.createElement("label");
+    row.className = "import-topics-row" + (alreadyImported ? " import-topics-row-disabled" : "");
+    const verseCount = (topicsData[name] || []).length;
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = selectedImportTopics.has(name);
+    checkbox.disabled = alreadyImported;
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selectedImportTopics.add(name);
+      else selectedImportTopics.delete(name);
+    });
+    row.appendChild(checkbox);
+    const label = document.createElement("span");
+    label.textContent = alreadyImported ? `${name} (already a study)` : `${name} (${verseCount} verse${verseCount === 1 ? "" : "s"})`;
+    row.appendChild(label);
+    list.appendChild(row);
+  });
+}
+
+el("importTopicsSubmit").addEventListener("click", () => {
+  if (!selectedImportTopics.size) {
+    el("importTopicsOverlay").classList.add("hidden");
+    return;
+  }
+
+  selectedImportTopics.forEach((name) => {
+    const keys = topicsData[name] || [];
+    const entries = keys.map((key) => ({ id: crypto.randomUUID(), key, note: "" }));
+    categoriesData.categories.push({
+      id: crypto.randomUUID(),
+      name,
+      description: "Imported from Nave's Topical Dictionary.",
+      tagIds: [],
+      entries,
+    });
+  });
+
+  scheduleSaveCategories();
+  selectedImportTopics = new Set();
+  el("importTopicsOverlay").classList.add("hidden");
+  renderStudiesView();
+});
+
+el("studyAddEntryBtn").addEventListener("click", () => {
+  const select = el("studyEntryBook");
+  if (!select.childElementCount) {
+    bible.books.forEach((book) => {
+      const opt = document.createElement("option");
+      opt.value = book.id;
+      opt.textContent = book.name;
+      select.appendChild(opt);
+    });
+  }
+  el("studyEntryChapter").value = "1";
+  el("studyEntryVerse").value = "1";
+  el("studyEntryNote").value = "";
+  el("addStudyEntryOverlay").classList.remove("hidden");
+});
+
+el("addStudyEntryCancel").addEventListener("click", () => {
+  el("addStudyEntryOverlay").classList.add("hidden");
+});
+
+el("addStudyEntryForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const study = categoriesData.categories.find((c) => c.id === currentStudyId);
+  if (!study) return;
+
+  const bookId = el("studyEntryBook").value;
+  const chapter = Number(el("studyEntryChapter").value);
+  const verse = Number(el("studyEntryVerse").value);
+  const note = el("studyEntryNote").value.trim();
+
+  const book = booksById.get(bookId);
+  if (!book || !book.chapters[chapter - 1] || !book.chapters[chapter - 1].verses[verse - 1]) {
+    alert("That reference doesn't exist — check the chapter and verse numbers.");
+    return;
+  }
+
+  const key = verseKey(bookId, chapter, verse);
+  if (study.entries.some((entry) => entry.key === key)) {
+    alert("That verse is already in this study.");
+    return;
+  }
+
+  study.entries.push({ id: crypto.randomUUID(), key, note });
+  scheduleSaveCategories();
+  renderStudyDetail();
+  el("addStudyEntryOverlay").classList.add("hidden");
+});
+
+// ---------- Timeline: Adam to Jesus ----------
+
+let genealogyData = null;
+let genealogyPromise = null;
+
+function ensureGenealogyLoaded() {
+  if (genealogyData) return Promise.resolve();
+  if (!genealogyPromise) {
+    genealogyPromise = fetchJSON("data/genealogy.json").then((d) => {
+      genealogyData = d;
+    });
+  }
+  return genealogyPromise;
+}
+
+function renderTimelineView() {
+  const datedWrap = el("timelineDatedWrap");
+  const undatedList = el("timelineUndatedList");
+  datedWrap.innerHTML = '<div class="empty-msg">Loading…</div>';
+  undatedList.innerHTML = "";
+
+  ensureGenealogyLoaded().then(() => {
+    const dated = genealogyData.chain.filter((p) => p.bornYear != null);
+    const undated = genealogyData.chain.filter((p) => p.bornYear == null);
+
+    const maxYear = Math.max(...dated.map((p) => p.diedYear));
+    const rowHeight = 30;
+    const labelWidth = 110;
+    const chartWidth = 1500;
+    const yearToX = (year) => labelWidth + (year / maxYear) * (chartWidth - labelWidth - 20);
+    const svgWidth = chartWidth;
+    const svgHeight = dated.length * rowHeight + 30;
+
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", `0 0 ${svgWidth} ${svgHeight}`);
+    svg.setAttribute("width", svgWidth);
+    svg.setAttribute("height", svgHeight);
+    svg.setAttribute("class", "timeline-svg");
+
+    // AM-year axis ticks along the top.
+    for (let year = 0; year <= maxYear; year += 500) {
+      const x = yearToX(year);
+      const tick = document.createElementNS(SVG_NS, "line");
+      tick.setAttribute("x1", x);
+      tick.setAttribute("y1", 0);
+      tick.setAttribute("x2", x);
+      tick.setAttribute("y2", svgHeight);
+      tick.setAttribute("class", "timeline-tick");
+      svg.appendChild(tick);
+
+      const label = document.createElementNS(SVG_NS, "text");
+      label.setAttribute("x", x);
+      label.setAttribute("y", 12);
+      label.setAttribute("class", "timeline-tick-label");
+      label.textContent = `AM ${year}`;
+      svg.appendChild(label);
+    }
+
+    dated.forEach((person, i) => {
+      const y = 24 + i * rowHeight;
+      const x1 = yearToX(person.bornYear);
+      const x2 = yearToX(person.diedYear);
+
+      const nameLabel = document.createElementNS(SVG_NS, "text");
+      nameLabel.setAttribute("x", labelWidth - 8);
+      nameLabel.setAttribute("y", y + 4);
+      nameLabel.setAttribute("text-anchor", "end");
+      nameLabel.setAttribute("class", "timeline-row-label");
+      nameLabel.textContent = person.displayName;
+      svg.appendChild(nameLabel);
+
+      const bar = document.createElementNS(SVG_NS, "rect");
+      bar.setAttribute("x", x1);
+      bar.setAttribute("y", y - 8);
+      bar.setAttribute("width", Math.max(2, x2 - x1));
+      bar.setAttribute("height", 16);
+      bar.setAttribute("rx", 4);
+      bar.setAttribute("class", "timeline-bar");
+      bar.addEventListener("click", () => openVerseDetail(person.genesisVerseKey));
+
+      const title = document.createElementNS(SVG_NS, "title");
+      title.textContent = `${person.displayName}: born AM ${person.bornYear}, died AM ${person.diedYear} (lived ${person.diedYear - person.bornYear} years)`;
+      bar.appendChild(title);
+
+      svg.appendChild(bar);
+    });
+
+    datedWrap.innerHTML = "";
+    datedWrap.appendChild(svg);
+
+    undatedList.innerHTML = "";
+    undated.forEach((person, i) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "timeline-chip";
+      chip.textContent = person.displayName;
+      chip.addEventListener("click", () => openVerseDetail(person.verseKey));
+      undatedList.appendChild(chip);
+      if (i < undated.length - 1) {
+        const arrow = document.createElement("span");
+        arrow.className = "timeline-chip-arrow";
+        arrow.textContent = "→";
+        undatedList.appendChild(arrow);
+      }
+    });
+
+    const matthewList = el("timelineMatthewList");
+    matthewList.innerHTML = "";
+    genealogyData.matthewBranch.forEach((person, i) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "timeline-chip";
+      chip.textContent = person.displayName;
+      chip.addEventListener("click", () => openVerseDetail(person.verseKey));
+      matthewList.appendChild(chip);
+      if (i < genealogyData.matthewBranch.length - 1) {
+        const arrow = document.createElement("span");
+        arrow.className = "timeline-chip-arrow";
+        arrow.textContent = "→";
+        matthewList.appendChild(arrow);
+      }
+    });
+  });
+}
+
 // ---------- Insights: tag/note density heatmap ----------
 //
 // Counts only manual tags/notes (every key present in tagsData.verseTags is
@@ -2004,10 +2682,262 @@ el("bulkImportContinueBtn").addEventListener("click", () => {
 
 const HEATMAP_BUCKETS = 4;
 
+// ---------- Studies / Insights sub-tabs ----------
+//
+// Topics (a read-only reference library) lives under Studies, and the three
+// visualization pages live under Insights, as sibling tabs within the same
+// outer view rather than separate sidebar icons — kept as simple
+// visibility toggles since the expensive one (the full cross-reference
+// canvas) is rendered once on Insights entry and just persists in the DOM
+// across tab switches, no re-render needed.
+
+function setStudiesTab(tab) {
+  document.querySelectorAll("[data-studiestab]").forEach((btn) => btn.classList.toggle("active", btn.dataset.studiestab === tab));
+  el("studiesStudiesPanel").classList.toggle("hidden", tab !== "studies");
+  el("studiesTopicsPanel").classList.toggle("hidden", tab !== "topics");
+  if (tab === "studies") renderStudiesView();
+  else renderTopicsView();
+}
+
+document.querySelectorAll("[data-studiestab]").forEach((btn) => {
+  btn.addEventListener("click", () => setStudiesTab(btn.dataset.studiestab));
+});
+
+function setInsightsTab(tab) {
+  document.querySelectorAll("[data-insightstab]").forEach((btn) => btn.classList.toggle("active", btn.dataset.insightstab === tab));
+  el("insightsCrossRefPanel").classList.toggle("hidden", tab !== "crossref");
+  el("insightsTagsPanel").classList.toggle("hidden", tab !== "tags");
+  el("insightsTimelinePanel").classList.toggle("hidden", tab !== "timeline");
+  el("insightsMapPanel").classList.toggle("hidden", tab !== "map");
+  if (tab === "map") renderPlacesMap();
+}
+
+// ---------- Bible places map ----------
+
+let placesData = null;
+let placesPromise = null;
+let routesData = null;
+let routesPromise = null;
+let placesMapInstance = null;
+let placesLayerGroup = null;
+const PLACES_POPUP_VERSE_CAP = 20;
+
+function ensurePlacesLoaded() {
+  if (placesData) return Promise.resolve();
+  if (!placesPromise) {
+    placesPromise = fetchJSON("data/places.json").then((d) => {
+      placesData = d;
+    });
+  }
+  return placesPromise;
+}
+
+function ensureRoutesLoaded() {
+  if (routesData) return Promise.resolve();
+  if (!routesPromise) {
+    routesPromise = fetchJSON("data/routes.json").then((d) => {
+      routesData = d;
+    });
+  }
+  return routesPromise;
+}
+
+function buildPlacePopup(place) {
+  const wrap = document.createElement("div");
+  wrap.className = "place-popup";
+
+  const title = document.createElement("div");
+  title.className = "place-popup-title";
+  title.textContent = place.name;
+  wrap.appendChild(title);
+
+  if (place.comment) {
+    const comment = document.createElement("div");
+    comment.className = "place-popup-comment";
+    comment.textContent = place.comment;
+    wrap.appendChild(comment);
+  }
+
+  const list = document.createElement("div");
+  list.className = "place-popup-verses";
+  const shown = place.verseKeys.slice(0, PLACES_POPUP_VERSE_CAP);
+  shown.forEach((key) => {
+    const { bookId, chapter, verse } = parseVerseKey(key);
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "cross-ref-chip";
+    chip.textContent = refLabel(bookId, chapter, verse);
+    chip.addEventListener("click", () => openVerseDetail(key));
+    list.appendChild(chip);
+  });
+  wrap.appendChild(list);
+
+  if (place.verseKeys.length > PLACES_POPUP_VERSE_CAP) {
+    const more = document.createElement("div");
+    more.className = "place-popup-more";
+    more.textContent = `+${place.verseKeys.length - PLACES_POPUP_VERSE_CAP} more`;
+    wrap.appendChild(more);
+  }
+
+  return wrap;
+}
+
+// Route titles are event/place names as much as person names ("Mesopotamian
+// Invasion", "Fall of Samaria"), so there's no reliable structured "person"
+// field to filter on — this keyword list is a best-effort tag pulled from
+// the title text itself, checked in order (first match wins for titles
+// mentioning more than one figure, e.g. "Elijah and Elisha" tags Elijah).
+// Titles matching none of these still show under "All People".
+const ROUTE_PERSON_KEYWORDS = [
+  "Abram", "Abraham", "Isaac", "Jacob", "Joseph", "Moses", "Aaron", "Balaam",
+  "Joshua", "Deborah", "Gideon", "Jephthah", "Samson", "Ruth", "Hannah",
+  "Samuel", "Saul", "David", "Solomon", "Elijah", "Elisha", "Naaman", "Jehu",
+  "Hezekiah", "Jonah", "Josiah", "Jesus", "John", "Philip", "Peter", "Paul",
+];
+
+function personTagForRouteTitle(title) {
+  return ROUTE_PERSON_KEYWORDS.find((name) => new RegExp(`\\b${name}\\b`).test(title)) || null;
+}
+
+// Same best-effort keyword approach as the person tags above, for titles
+// that are event/place names rather than a person's ("Fall of Samaria",
+// "Mesopotamian Invasion") — checked in order, first match wins. Anything
+// matching none of these still shows under "Other".
+const ROUTE_CATEGORY_RULES = [
+  ["Patriarchs", /Abram|Isaac|Jacob|Joseph|Melchizedek|Hagar|Lot |GEN /i],
+  ["Exodus & Conquest", /Moses|Aaron|Exodus|Spies|wandering|Transjordan|Sihon|Og battle|Balaam|Jordan|Jericho|^Ai\b|Gibeon|Hazor|Conquest/i],
+  ["Judges Era", /Ehud|Deborah|Gideon|Abimelech|Jephthah|Samson|Dan Migration|Benjamites|Hannah|Ruth/i],
+  ["Kings & Wars", /Kingdom|anointed|Shishak|Jeroboam|Rehoboam|Baasha|Zerah|Uzziah|Jehoiakim|Josiah|Amaziah|Tiglath|Rezin|Sennacherib|Hezekiah|Sargon|Samaria|Invasion|Siege|War|Revolt|Rebellion|Battle|battle|Campaign|Michmash|Jabesh|Aphek|donkey|David|Saul|Solomon|Ark Journeys|Nebuchadnezzar|Babylon|Exile|Gedaliah|Deportation|Naboth|Jehu|Jehoash|Neco/i],
+  ["Elijah & Elisha", /Elijah|Elisha|Naaman|Benhadad|Hazael|Moabite/i],
+  ["Jesus' Ministry", /Nazareth|Bethlehem|Cana|Galilee|Capernaum|Transfiguration|Lazarus|Emmaus|Ascension|Jesus|synagogues|Tyre|Sidon|Nain|Ephraim|Dedication|Storm|Herod|John the baptist|Bethabara/i],
+  ["Paul & Early Church", /Philip|Paul|Peter|Missionary|Antioch|Rome|Damascus|Ethiopian Eunuch/i],
+];
+
+function categoryTagForRouteTitle(title) {
+  const match = ROUTE_CATEGORY_RULES.find(([, re]) => re.test(title));
+  return match ? match[0] : "Other";
+}
+
+let routeLineLayers = []; // [{layer, personTag, categoryTag}]
+let selectedRoutePeople = new Set(); // empty = show all people
+let selectedRouteCategories = new Set(); // empty = show all categories
+
+function updateRouteVisibility() {
+  if (!placesMapInstance) return;
+  const showRoutes = el("mapToggleRoutes").checked;
+  routeLineLayers.forEach(({ layer, personTag, categoryTag }) => {
+    const personOk = selectedRoutePeople.size === 0 || selectedRoutePeople.has(personTag);
+    const categoryOk = selectedRouteCategories.size === 0 || selectedRouteCategories.has(categoryTag);
+    const shouldShow = showRoutes && personOk && categoryOk;
+    const onMap = placesMapInstance.hasLayer(layer);
+    if (shouldShow && !onMap) layer.addTo(placesMapInstance);
+    else if (!shouldShow && onMap) placesMapInstance.removeLayer(layer);
+  });
+}
+
+function renderFilterChips(containerId, selectedSet, allLabel, options) {
+  const container = el(containerId);
+  container.innerHTML = "";
+
+  const allChip = document.createElement("button");
+  allChip.type = "button";
+  allChip.className = "cross-ref-chip map-person-chip" + (selectedSet.size === 0 ? " active" : "");
+  allChip.textContent = allLabel;
+  allChip.addEventListener("click", () => {
+    selectedSet.clear();
+    renderFilterChips(containerId, selectedSet, allLabel, options);
+    updateRouteVisibility();
+  });
+  container.appendChild(allChip);
+
+  options.forEach((name) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "cross-ref-chip map-person-chip" + (selectedSet.has(name) ? " active" : "");
+    chip.textContent = name;
+    chip.addEventListener("click", () => {
+      if (selectedSet.has(name)) selectedSet.delete(name);
+      else selectedSet.add(name);
+      renderFilterChips(containerId, selectedSet, allLabel, options);
+      updateRouteVisibility();
+    });
+    container.appendChild(chip);
+  });
+}
+
+function renderPlacesMap() {
+  Promise.all([ensurePlacesLoaded(), ensureRoutesLoaded()]).then(() => {
+    if (!placesMapInstance) {
+      placesMapInstance = L.map("placesMapContainer").setView([31.5, 35.2], 7);
+      // CartoDB's tiles instead of stock OSM ones — stock OSM renders place
+      // labels in the local script for this region (Arabic/Hebrew), CartoDB
+      // renders Latin-script/English labels worldwide.
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        maxZoom: 19,
+      }).addTo(placesMapInstance);
+
+      // Routes drawn first so points sit visually on top of them.
+      routesData.forEach((route) => {
+        const latLngs = route.coordinates.map(([lon, lat]) => [lat, lon]);
+        const line = L.polyline(latLngs, {
+          color: "#a5443b",
+          weight: 2,
+          opacity: 0.6,
+          dashArray: "4 4",
+        });
+        line.bindTooltip(route.title, { sticky: true });
+        routeLineLayers.push({
+          layer: line,
+          personTag: personTagForRouteTitle(route.title),
+          categoryTag: categoryTagForRouteTitle(route.title),
+        });
+      });
+
+      const people = [...new Set(routeLineLayers.map((r) => r.personTag).filter(Boolean))].sort();
+      renderFilterChips("mapPersonFilterChips", selectedRoutePeople, "All People", people);
+      const categories = [...new Set(routeLineLayers.map((r) => r.categoryTag))].sort();
+      renderFilterChips("mapCategoryFilterChips", selectedRouteCategories, "All Categories", categories);
+
+      placesLayerGroup = L.layerGroup();
+      placesData.forEach((place) => {
+        const marker = L.circleMarker([place.lat, place.lon], {
+          radius: 5,
+          weight: 1,
+          color: "#8a5a2b",
+          fillColor: "#c98a3e",
+          fillOpacity: 0.85,
+        });
+        marker.bindPopup(buildPlacePopup(place));
+        placesLayerGroup.addLayer(marker);
+      });
+      placesLayerGroup.addTo(placesMapInstance);
+
+      updateRouteVisibility();
+    }
+    setTimeout(() => placesMapInstance.invalidateSize(), 0);
+  });
+}
+
+el("mapTogglePlaces").addEventListener("change", () => {
+  if (!placesMapInstance || !placesLayerGroup) return;
+  if (el("mapTogglePlaces").checked) placesLayerGroup.addTo(placesMapInstance);
+  else placesMapInstance.removeLayer(placesLayerGroup);
+});
+
+el("mapToggleRoutes").addEventListener("change", updateRouteVisibility);
+
+document.querySelectorAll("[data-insightstab]").forEach((btn) => {
+  btn.addEventListener("click", () => setInsightsTab(btn.dataset.insightstab));
+});
+
 function renderInsightsView() {
   renderHeatmap();
   renderTagGraph();
   renderRefGraph();
+  renderCrossRefGraph();
+  renderFullCrossRefMap();
+  renderTimelineView();
 }
 
 function renderHeatmap() {
@@ -2313,6 +3243,357 @@ function renderRefGraph() {
   wrap.appendChild(svg);
 }
 
+// ---------- Cross-reference map (book-level, OpenBible.info data) ----------
+//
+// data/cross-references.json is verse-level and symmetric (~30k verses,
+// ~300k edges) — far too dense to plot directly. Aggregating up to book
+// pairs and keeping only the strongest connections gives a readable
+// "how the Bible points at itself" picture, same circular layout as the
+// other two graphs above.
+
+const CROSS_REF_GRAPH_EDGE_CAP = 90;
+
+function renderCrossRefGraph() {
+  const wrap = el("crossRefGraphWrap");
+  wrap.innerHTML = '<div class="tag-graph-empty">Loading…</div>';
+
+  ensureCrossReferencesLoaded().then(() => {
+    if (currentView !== "insights") return; // user navigated away while loading
+
+    const bookEdgeCount = new Map(); // "bookA|bookB" (sorted) -> count
+    Object.entries(crossReferencesData).forEach(([fromKey, refs]) => {
+      const fromBook = parseVerseKey(fromKey).bookId;
+      refs.forEach((ref) => {
+        const toBook = parseVerseKey(ref.key).bookId;
+        if (fromBook === toBook) return;
+        const edgeKey = [fromBook, toBook].sort().join("|");
+        bookEdgeCount.set(edgeKey, (bookEdgeCount.get(edgeKey) || 0) + 1);
+      });
+    });
+
+    // Data is symmetric (A→B and B→A both stored), so every pair was
+    // counted twice — halve for an accurate distinct-crossref count.
+    const edges = [...bookEdgeCount.entries()]
+      .map(([key, count]) => [key, Math.round(count / 2)])
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, CROSS_REF_GRAPH_EDGE_CAP);
+
+    if (!edges.length) {
+      wrap.innerHTML = '<div class="tag-graph-empty">No cross-reference data loaded.</div>';
+      return;
+    }
+
+    const nodeIds = new Set();
+    const nodeLinkCount = new Map();
+    edges.forEach(([key, count]) => {
+      const [a, b] = key.split("|");
+      nodeIds.add(a);
+      nodeIds.add(b);
+      nodeLinkCount.set(a, (nodeLinkCount.get(a) || 0) + count);
+      nodeLinkCount.set(b, (nodeLinkCount.get(b) || 0) + count);
+    });
+
+    const nodes = [...nodeIds].sort((a, b) => (booksById.get(a)?.order ?? 0) - (booksById.get(b)?.order ?? 0));
+    const nodeLabel = (bookId) => booksById.get(bookId)?.name || bookId;
+
+    const maxWeight = Math.max(1, ...edges.map(([, count]) => count));
+    const maxLinkCount = Math.max(1, ...nodeLinkCount.values());
+
+    const size = 420;
+    const cx = size / 2;
+    const cy = size / 2;
+    const radius = size / 2 - 60;
+    const positions = new Map();
+    nodes.forEach((nodeId, i) => {
+      const angle = (2 * Math.PI * i) / nodes.length - Math.PI / 2;
+      positions.set(nodeId, { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) });
+    });
+
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
+    svg.setAttribute("width", size);
+    svg.setAttribute("height", size);
+
+    edges.forEach(([key, count]) => {
+      const [a, b] = key.split("|");
+      const pa = positions.get(a);
+      const pb = positions.get(b);
+      if (!pa || !pb) return;
+
+      const line = document.createElementNS(SVG_NS, "line");
+      line.setAttribute("x1", pa.x);
+      line.setAttribute("y1", pa.y);
+      line.setAttribute("x2", pb.x);
+      line.setAttribute("y2", pb.y);
+      line.setAttribute("class", "tag-graph-edge");
+      line.setAttribute("stroke-width", String(1 + (count / maxWeight) * 5));
+      line.setAttribute("stroke-opacity", String(0.2 + (count / maxWeight) * 0.5));
+
+      const title = document.createElementNS(SVG_NS, "title");
+      title.textContent = `${nodeLabel(a)} + ${nodeLabel(b)}: ${count} cross-reference${count === 1 ? "" : "s"}`;
+      line.appendChild(title);
+
+      svg.appendChild(line);
+    });
+
+    nodes.forEach((nodeId) => {
+      const pos = positions.get(nodeId);
+      const count = nodeLinkCount.get(nodeId) || 0;
+      const r = 7 + (count / maxLinkCount) * 11;
+
+      const g = document.createElementNS(SVG_NS, "g");
+      g.setAttribute("class", "tag-graph-node");
+      g.setAttribute("transform", `translate(${pos.x}, ${pos.y})`);
+      g.addEventListener("click", () => {
+        selectBook(nodeId, 1);
+        showView("read");
+      });
+
+      const circle = document.createElementNS(SVG_NS, "circle");
+      circle.setAttribute("r", String(r));
+      circle.setAttribute("fill", "var(--heatmap-2)");
+      circle.setAttribute("stroke", "currentColor");
+      g.appendChild(circle);
+
+      const titleEl = document.createElementNS(SVG_NS, "title");
+      titleEl.textContent = `${nodeLabel(nodeId)}: ${count} cross-reference${count === 1 ? "" : "s"}`;
+      g.appendChild(titleEl);
+
+      const label = document.createElementNS(SVG_NS, "text");
+      label.setAttribute("class", "tag-graph-label");
+      const isRight = pos.x > cx + 5;
+      const isLeft = pos.x < cx - 5;
+      label.setAttribute("text-anchor", isRight ? "start" : isLeft ? "end" : "middle");
+      label.setAttribute("x", String(isRight ? r + 4 : isLeft ? -(r + 4) : 0));
+      label.setAttribute("y", "4");
+      label.textContent = nodeLabel(nodeId);
+      g.appendChild(label);
+
+      svg.appendChild(g);
+    });
+
+    wrap.innerHTML = "";
+    wrap.appendChild(svg);
+  });
+}
+
+// ---------- Full cross-reference map (every verse, canvas-rendered) ----------
+//
+// ~151,000 distinct verse-pair edges — an order of magnitude past what an
+// SVG/DOM graph (or a human eye tracing individual lines) can handle. Same
+// approach as the well-known Chris Harrison Bible cross-reference
+// visualization: every verse placed around a circle in canonical reading
+// order, colored by book, every cross-reference a thin arc bowed toward the
+// center. Drawn once to an offscreen canvas (a few hundred thousand stroke
+// calls, still only takes ~1s) and reused as a static backdrop; hovering
+// finds the nearest verse by angle and overlays just its own ~12 links —
+// individual-edge interactivity without redrawing the whole picture.
+
+let verseOrderCache = null;
+let fullCrossRefBaseCanvas = null;
+
+function buildVerseOrder() {
+  if (verseOrderCache) return verseOrderCache;
+  const order = [];
+  const indexByKey = new Map();
+  const bookRanges = new Map(); // bookId -> {start, end (exclusive), hue}
+
+  bible.books.forEach((book, bi) => {
+    const start = order.length;
+    book.chapters.forEach((ch, ci) => {
+      ch.verses.forEach((_, vi) => {
+        const key = verseKey(book.id, ci + 1, vi + 1);
+        indexByKey.set(key, order.length);
+        order.push(key);
+      });
+    });
+    bookRanges.set(book.id, { start, end: order.length, hue: Math.round((bi / bible.books.length) * 360) });
+  });
+
+  verseOrderCache = { order, indexByKey, bookRanges };
+  return verseOrderCache;
+}
+
+function verseCirclePoint(index, total, cx, cy, radius) {
+  const angle = (2 * Math.PI * index) / total - Math.PI / 2;
+  return { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle), angle };
+}
+
+function strokeCrossRefArc(ctx, pa, pb, cx, cy, color, alpha, width) {
+  const mid = { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
+  const bow = 0.22; // how far the control point is pulled toward center — smaller = more bowed
+  const control = { x: cx + (mid.x - cx) * bow, y: cy + (mid.y - cy) * bow };
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = alpha;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  ctx.moveTo(pa.x, pa.y);
+  ctx.quadraticCurveTo(control.x, control.y, pb.x, pb.y);
+  ctx.stroke();
+}
+
+function bookHueForIndex(index, order, bookRanges) {
+  const bookId = parseVerseKey(order[index]).bookId;
+  return bookRanges.get(bookId)?.hue ?? 0;
+}
+
+function renderFullCrossRefMap() {
+  const canvas = el("fullCrossRefCanvas");
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.font = "12px sans-serif";
+  ctx.fillStyle = "#888";
+  ctx.textAlign = "center";
+  ctx.fillText("Loading…", canvas.width / 2, canvas.height / 2);
+
+  ensureCrossReferencesLoaded().then(() => {
+    if (currentView !== "insights") return;
+
+    const { order, indexByKey, bookRanges } = buildVerseOrder();
+    const total = order.length;
+    const size = canvas.width;
+    const cx = size / 2;
+    const cy = size / 2;
+    const radius = size / 2 - 90;
+
+    const base = document.createElement("canvas");
+    base.width = size;
+    base.height = size;
+    const bctx = base.getContext("2d");
+
+    Object.entries(crossReferencesData).forEach(([fromKey, refs]) => {
+      const i = indexByKey.get(fromKey);
+      if (i == null) return;
+      refs.forEach((ref) => {
+        const j = indexByKey.get(ref.key);
+        if (j == null || j <= i) return; // draw each unordered pair once
+        const pa = verseCirclePoint(i, total, cx, cy, radius);
+        const pb = verseCirclePoint(j, total, cx, cy, radius);
+        const hue = bookHueForIndex(i, order, bookRanges);
+        strokeCrossRefArc(bctx, pa, pb, cx, cy, `hsl(${hue}, 70%, 55%)`, 0.05, 0.6);
+      });
+    });
+
+    // Book arc ring around the outside, colored to match, as a legend/guide —
+    // plus a radial label per book so the ring reads as "which book is this"
+    // rather than just a color code you have to memorize.
+    bctx.globalAlpha = 1;
+    bookRanges.forEach(({ start, end, hue }, bookId) => {
+      const a1 = verseCirclePoint(start, total, cx, cy, radius).angle;
+      const a2 = verseCirclePoint(Math.max(start, end - 1), total, cx, cy, radius).angle;
+      bctx.strokeStyle = `hsl(${hue}, 70%, 55%)`;
+      bctx.lineWidth = 4;
+      bctx.beginPath();
+      bctx.arc(cx, cy, radius + 8, a1, a2);
+      bctx.stroke();
+
+      const midIndex = Math.floor((start + end - 1) / 2);
+      const midAngle = verseCirclePoint(midIndex, total, cx, cy, radius).angle;
+      const book = booksById.get(bookId);
+      const name = book ? (book.name.length > 14 ? book.name.replace(/^(\d) /, "$1") : book.name) : bookId;
+
+      bctx.save();
+      bctx.translate(cx, cy);
+      bctx.rotate(midAngle);
+      // Keep text upright: flip it on the left half of the circle instead
+      // of rendering it sideways-down.
+      const flip = midAngle > Math.PI / 2 && midAngle < (3 * Math.PI) / 2;
+      bctx.translate(radius + 24, 0);
+      if (flip) bctx.rotate(Math.PI);
+      bctx.textAlign = flip ? "right" : "left";
+      bctx.textBaseline = "middle";
+      bctx.font = "10px sans-serif";
+      bctx.fillStyle = `hsl(${hue}, 55%, 35%)`;
+      bctx.fillText(name, 0, 0);
+      bctx.restore();
+    });
+
+    fullCrossRefBaseCanvas = base;
+    ctx.clearRect(0, 0, size, size);
+    ctx.globalAlpha = 1;
+    ctx.drawImage(base, 0, 0);
+  });
+}
+
+let fullCrossRefHoverKey = null;
+
+function handleFullCrossRefHover(evt) {
+  if (!fullCrossRefBaseCanvas || !crossReferencesData) return;
+  const canvas = el("fullCrossRefCanvas");
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const mx = (evt.clientX - rect.left) * scaleX;
+  const my = (evt.clientY - rect.top) * scaleY;
+
+  const size = canvas.width;
+  const cx = size / 2;
+  const cy = size / 2;
+  const radius = size / 2 - 90;
+
+  const dist = Math.hypot(mx - cx, my - cy);
+  if (dist < radius - 40 || dist > radius + 40) {
+    if (fullCrossRefHoverKey) {
+      fullCrossRefHoverKey = null;
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, size, size);
+      ctx.drawImage(fullCrossRefBaseCanvas, 0, 0);
+      el("fullCrossRefTooltip").classList.add("hidden");
+    }
+    return;
+  }
+
+  const { order, indexByKey, bookRanges } = buildVerseOrder();
+  const total = order.length;
+  let angle = Math.atan2(my - cy, mx - cx) + Math.PI / 2;
+  if (angle < 0) angle += 2 * Math.PI;
+  const index = Math.round((angle / (2 * Math.PI)) * total) % total;
+  const key = order[index];
+  if (key === fullCrossRefHoverKey) return;
+  fullCrossRefHoverKey = key;
+
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, size, size);
+  ctx.drawImage(fullCrossRefBaseCanvas, 0, 0);
+
+  const refs = crossReferencesData[key] || [];
+  const pa = verseCirclePoint(index, total, cx, cy, radius);
+  refs.forEach((ref) => {
+    const j = indexByKey.get(ref.key);
+    if (j == null) return;
+    const pb = verseCirclePoint(j, total, cx, cy, radius);
+    strokeCrossRefArc(ctx, pa, pb, cx, cy, "#e0392b", 0.85, 1.6);
+  });
+
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = "#e0392b";
+  ctx.beginPath();
+  ctx.arc(pa.x, pa.y, 4, 0, 2 * Math.PI);
+  ctx.fill();
+
+  const { bookId, chapter, verse } = parseVerseKey(key);
+  const tooltip = el("fullCrossRefTooltip");
+  tooltip.textContent = `${refLabel(bookId, chapter, verse)} — ${refs.length} cross-reference${refs.length === 1 ? "" : "s"}`;
+  tooltip.classList.remove("hidden");
+  tooltip.style.left = `${evt.clientX - rect.left + 12}px`;
+  tooltip.style.top = `${evt.clientY - rect.top + 12}px`;
+}
+
+el("fullCrossRefCanvas").addEventListener("mousemove", handleFullCrossRefHover);
+el("fullCrossRefCanvas").addEventListener("mouseleave", () => {
+  fullCrossRefHoverKey = null;
+  el("fullCrossRefTooltip").classList.add("hidden");
+  if (fullCrossRefBaseCanvas) {
+    const canvas = el("fullCrossRefCanvas");
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(fullCrossRefBaseCanvas, 0, 0);
+  }
+});
+el("fullCrossRefCanvas").addEventListener("click", () => {
+  if (fullCrossRefHoverKey) openVerseDetail(fullCrossRefHoverKey);
+});
+
 // ---------- Read-only share links ----------
 
 function shareUrlFor(token) {
@@ -2364,9 +3645,15 @@ async function renderSharesSection() {
       const row = document.createElement("div");
       row.className = "share-row";
       const url = shareUrlFor(token);
+      const viewCount = share.viewCount || 0;
+      const viewLabel = viewCount === 1 ? "1 view" : `${viewCount} views`;
+      const lastViewedLabel = share.lastViewedAt
+        ? `, last viewed ${new Date(share.lastViewedAt).toLocaleDateString()}`
+        : "";
       row.innerHTML = `
         <span class="share-row-name">${escapeHtml(share.tagName)}</span>
         <span class="share-row-link">${escapeHtml(url)}</span>
+        <span class="share-row-stats">${viewLabel}${lastViewedLabel}</span>
       `;
       const copyBtn = document.createElement("button");
       copyBtn.type = "button";
@@ -2717,8 +4004,8 @@ el("searchSelectAllBtn").addEventListener("click", () => {
 });
 
 el("searchSaveAutoTagBtn").addEventListener("click", () => {
-  showView("topics");
-  renderTopicsView();
+  showView("studies");
+  setStudiesTab("topics");
   openNewTagModal({ phrase: lastSearchQuery, phraseAnd: lastSearchAndQuery, name: lastSearchQuery });
 });
 
@@ -2882,6 +4169,8 @@ async function openWordStudyPanel(key) {
   el("wordStudyDetail").classList.add("hidden");
   el("wordStudyChips").classList.add("hidden");
   el("wordStudyLoading").classList.remove("hidden");
+  setSidebarTab("word");
+  renderCrossRefChips(el("sidebarCrossRefsList"), key, (otherKey) => openCrossRefsSidebar(otherKey));
 
   await loadStrongsData();
   if (wordStudyVerseKey !== key) return; // panel closed or moved on while loading
@@ -3049,8 +4338,8 @@ function renderWordStudyCard(num, allNums) {
 
   el("wscAutoTagBtn").addEventListener("click", () => {
     closeWordStudyPanel();
-    showView("topics");
-    renderTopicsView();
+    showView("studies");
+    setStudiesTab("topics");
     openNewTagModal({ strongs: num });
   });
 
