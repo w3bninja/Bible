@@ -46,9 +46,33 @@ const persons = JSON.parse(fs.readFileSync(path.join(DATA_DIR, "persons.json"), 
 
 // Strip disambiguation suffixes like " (son of Zebedee)" or " #2836" to get
 // the bare name for matching against topic titles, which are plain names.
-const personNames = new Set(
-  Object.keys(persons).map((label) => label.replace(/\s*\(.*\)\s*$/, "").replace(/\s*#\d+\s*$/, "").trim().toUpperCase())
-);
+// Also pulls extra aliases out of the parenthetical itself, since labels
+// like "Simon (Peter)" or "Saul (the apostle Paul)" name the person by
+// their better-known name there, not in the base label — a plain "Peter"
+// or "Paul" topic would otherwise be missed entirely.
+const personNames = new Set();
+Object.keys(persons).forEach((label) => {
+  const base = label.replace(/\s*\(.*\)\s*$/, "").replace(/\s*#\d+\s*$/, "").trim();
+  if (base) personNames.add(base.toUpperCase());
+
+  const parenMatch = label.match(/\(([^)]*)\)/);
+  if (!parenMatch) return;
+  const inner = parenMatch[1];
+
+  // A short, fully title-cased parenthetical (e.g. "Peter") is itself a name.
+  if (/^[A-Z][a-zA-Z]*(\s[A-Z][a-zA-Z]*){0,2}$/.test(inner)) {
+    personNames.add(inner.toUpperCase());
+  }
+  // "the apostle Paul", "also called Paul", "surnamed Paul" — take the
+  // trailing capitalized word as the alias.
+  const trailingName = inner.match(/(?:apostle|called|surnamed|known as)\s+([A-Z][a-zA-Z]*)\s*$/);
+  if (trailingName) personNames.add(trailingName[1].toUpperCase());
+});
+
+// A few well-known renames the source data doesn't link (it lists only the
+// birth name): Abram/Abraham, Sarai/Sarah. "Israel" is deliberately left
+// out since it's ambiguous with the nation, not just Jacob.
+["ABRAHAM", "SARAH"].forEach((name) => personNames.add(name));
 
 const placeCSV = fs.readFileSync(path.join(SRC_DIR, "BibleData-Place.csv"), "utf8").replace(/^﻿/, "");
 const placeRows = parseCSV(placeCSV);
@@ -60,9 +84,10 @@ const categories = {};
 const counts = { person: 0, place: 0, topic: 0 };
 
 Object.keys(topics).forEach((name) => {
+  const upper = name.toUpperCase();
   let category;
-  if (personNames.has(name)) category = "person";
-  else if (placeNames.has(name)) category = "place";
+  if (personNames.has(upper)) category = "person";
+  else if (placeNames.has(upper)) category = "place";
   else category = "topic";
   categories[name] = category;
   counts[category]++;
