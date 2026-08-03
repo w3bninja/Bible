@@ -36,6 +36,12 @@
   force = true
 
 [[redirects]]
+  from = "/api/categories"
+  to = "/.netlify/functions/categories"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/share-view"
   to = "/.netlify/functions/share-view"
   status = 200
