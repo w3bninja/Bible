@@ -31,6 +31,11 @@ exports.handler = async (event) => {
       return { statusCode: 404, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: "not_found" }) };
     }
 
+    share.viewCount = (share.viewCount || 0) + 1;
+    share.lastViewedAt = Date.now();
+    shares[token] = share;
+    await store().set("shares.json", JSON.stringify(shares));
+
     const tagsRaw = await store().get("tags.json");
     const tagsData = tagsRaw ? JSON.parse(tagsRaw) : { tags: [], verseTags: {} };
     const tag = (tagsData.tags || []).find((t) => t.id === share.tagId);
