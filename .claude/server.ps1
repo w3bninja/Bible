@@ -2,6 +2,7 @@ param([int]$Port = 5500)
 
 $root = Split-Path -Parent $PSScriptRoot
 $tagsPath = Join-Path $root "data\tags.json"
+$categoriesPath = Join-Path $root "data\categories.json"
 
 $mimeMap = @{
   ".html" = "text/html"
@@ -18,6 +19,11 @@ $mimeMap = @{
 if (-not (Test-Path $tagsPath)) {
   $emptyTags = '{"tags":[],"verseTags":{}}'
   [System.IO.File]::WriteAllText($tagsPath, $emptyTags, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+if (-not (Test-Path $categoriesPath)) {
+  $emptyCategories = '{"categories":[]}'
+  [System.IO.File]::WriteAllText($categoriesPath, $emptyCategories, (New-Object System.Text.UTF8Encoding($false)))
 }
 
 $listener = New-Object System.Net.HttpListener
@@ -46,6 +52,23 @@ while ($listener.IsListening) {
       # Validate it is well-formed JSON before writing to disk.
       $null = $body | ConvertFrom-Json -ErrorAction Stop
       [System.IO.File]::WriteAllText($tagsPath, $body, (New-Object System.Text.UTF8Encoding($false)))
+
+      $response.ContentType = "application/json"
+      $okBytes = [System.Text.Encoding]::UTF8.GetBytes('{"ok":true}')
+      $response.OutputStream.Write($okBytes, 0, $okBytes.Length)
+    }
+    elseif ($path -eq "/api/categories" -and $request.HttpMethod -eq "GET") {
+      $bytes = [System.IO.File]::ReadAllBytes($categoriesPath)
+      $response.ContentType = "application/json"
+      $response.OutputStream.Write($bytes, 0, $bytes.Length)
+    }
+    elseif ($path -eq "/api/categories" -and $request.HttpMethod -eq "POST") {
+      $reader = New-Object System.IO.StreamReader($request.InputStream, $request.ContentEncoding)
+      $body = $reader.ReadToEnd()
+      $reader.Close()
+
+      $null = $body | ConvertFrom-Json -ErrorAction Stop
+      [System.IO.File]::WriteAllText($categoriesPath, $body, (New-Object System.Text.UTF8Encoding($false)))
 
       $response.ContentType = "application/json"
       $okBytes = [System.Text.Encoding]::UTF8.GetBytes('{"ok":true}')
