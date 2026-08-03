@@ -1,4 +1,8 @@
 .claude/settings.local.json
 .tmp-kjv-src/
 .tmp-topics-src/
+.tmp-topics2-src/
+.tmp-xref-src/
 .netlify/
+.tmp-routes-src/
+.tmp-geo-src/
