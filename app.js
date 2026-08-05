@@ -911,7 +911,21 @@ function setSidebarTab(tab) {
 el("wordStudyTabBtn").addEventListener("click", () => setSidebarTab("word"));
 el("crossRefsTabBtn").addEventListener("click", () => setSidebarTab("crossrefs"));
 
-function openCrossRefsSidebar(key) {
+// Cross-ref chips clicked inside the sidebar jump to a *different* verse —
+// keep the main reading/verse-detail view in sync with whatever the sidebar
+// is currently showing, and remember where we came from so there's a way
+// back (rather than silently stranding the user on a verse they didn't
+// explicitly navigate to).
+let crossRefSidebarHistory = [];
+
+function openCrossRefsSidebar(key, opts = {}) {
+  if (opts.pushCurrent && wordStudyVerseKey && wordStudyVerseKey !== key) {
+    crossRefSidebarHistory.push(wordStudyVerseKey);
+  } else if (!opts.pushCurrent && !opts.fromBack) {
+    crossRefSidebarHistory = []; // fresh open (expand button / word-study panel), not a chip navigation
+  }
+  el("crossRefSidebarBackBtn").classList.toggle("hidden", crossRefSidebarHistory.length === 0);
+
   wordStudyVerseKey = key;
   const { bookId, chapter, verse } = parseVerseKey(key);
   el("wordStudyRef").textContent = refLabel(bookId, chapter, verse);
@@ -920,8 +934,20 @@ function openCrossRefsSidebar(key) {
   el("wordStudyChips").classList.add("hidden");
   el("wordStudyLoading").classList.add("hidden");
   setSidebarTab("crossrefs");
-  renderCrossRefChips(el("sidebarCrossRefsList"), key, (otherKey) => openCrossRefsSidebar(otherKey));
+  renderCrossRefChips(el("sidebarCrossRefsList"), key, (otherKey) => {
+    openVerseDetail(otherKey);
+    openCrossRefsSidebar(otherKey, { pushCurrent: true });
+  });
+
+  if (currentView === "verse" && currentVerseKey !== key) openVerseDetail(key);
 }
+
+el("crossRefSidebarBackBtn").addEventListener("click", () => {
+  const prevKey = crossRefSidebarHistory.pop();
+  if (!prevKey) return;
+  openVerseDetail(prevKey);
+  openCrossRefsSidebar(prevKey, { fromBack: true });
+});
 
 function renderVerseDetailTags() {
   const container = el("verseDetailTags");
@@ -1146,6 +1172,7 @@ function openNewTagModal(opts = {}) {
   el("newTagStrongs").value = opts.strongs || (tag && tag.rule && tag.rule.strongs) || "";
   el("newTagTopic").value = opts.topic || (tag && tag.rule && tag.rule.topic) || "";
   el("newTagPerson").value = (tag && tag.rule && tag.rule.person) || "";
+  el("newTagPlace").value = opts.place || (tag && tag.rule && tag.rule.place) || "";
   el("newTagPhrase").value = opts.phrase || (tag && tag.rule && tag.rule.phrase) || "";
   el("newTagPhraseAnd").value = opts.phraseAnd || (tag && tag.rule && tag.rule.phraseAnd) || "";
   selectedHue = tag ? tag.hue : HUE_PRESETS[Math.floor(Math.random() * HUE_PRESETS.length)];
@@ -1154,12 +1181,14 @@ function openNewTagModal(opts = {}) {
   el("newTagStrongsRow").classList.toggle("hidden", manualOnly);
   el("newTagTopicRow").classList.toggle("hidden", manualOnly);
   el("newTagPersonRow").classList.toggle("hidden", manualOnly);
+  el("newTagPlaceRow").classList.toggle("hidden", manualOnly);
   el("newTagPhraseRow").classList.toggle("hidden", manualOnly);
   el("newTagPhraseAndRow").classList.toggle("hidden", manualOnly);
 
   if (!manualOnly) {
     ensureTopicsLoaded().then(() => populateDatalist("topicsDatalist", Object.keys(topicsData)));
     ensurePersonsLoaded().then(() => populateDatalist("personsDatalist", Object.keys(personsData)));
+    ensurePlaceVersesIndexLoaded().then(() => populateDatalist("placesDatalist", Object.keys(placeVersesIndex)));
   }
 
   el("newTagOverlay").classList.remove("hidden");
@@ -1201,6 +1230,7 @@ el("newTagForm").addEventListener("submit", (e) => {
   const strongsInput = el("newTagStrongs").value.trim().toUpperCase();
   const topicInput = el("newTagTopic").value.trim();
   const personInput = el("newTagPerson").value.trim();
+  const placeInput = el("newTagPlace").value.trim();
   const phraseInput = el("newTagPhrase").value.trim();
   const phraseAndInput = el("newTagPhraseAnd").value.trim();
 
@@ -1213,6 +1243,9 @@ el("newTagForm").addEventListener("submit", (e) => {
   } else if (personInput) {
     const matched = Object.keys(personsData || {}).find((p) => p.toLowerCase() === personInput.toLowerCase());
     if (matched) rule = { person: matched };
+  } else if (placeInput) {
+    const matched = Object.keys(placeVersesIndex || {}).find((p) => p.toLowerCase() === placeInput.toLowerCase());
+    if (matched) rule = { place: matched };
   } else if (phraseInput) {
     rule = { phrase: phraseInput };
     if (phraseAndInput) rule.phraseAnd = phraseAndInput;
@@ -1254,7 +1287,7 @@ el("newTagForm").addEventListener("submit", (e) => {
 // ---------- Tags browse view (manual tags only) ----------
 
 function isSmartTag(tag) {
-  return !!(tag.rule && (tag.rule.strongs || tag.rule.topic || tag.rule.person));
+  return !!(tag.rule && (tag.rule.strongs || tag.rule.topic || tag.rule.person || tag.rule.place));
 }
 
 function renderTagsView() {
@@ -1365,6 +1398,7 @@ function ruleDescription(rule) {
   if (rule.strongs) return `Strong's ${rule.strongs}`;
   if (rule.topic) return `Topic: ${rule.topic}`;
   if (rule.person) return `Person: ${rule.person}`;
+  if (rule.place) return `Place: ${rule.place}`;
   if (rule.phrase) return `Phrase: "${rule.phrase}"${rule.phraseAnd ? ` AND "${rule.phraseAnd}"` : ""}`;
   return "";
 }
@@ -4042,10 +4076,11 @@ function loadStrongsData() {
 
 // ---------- Smart (rule-based) tags ----------
 //
-// A tag with a `rule: {strongs: "G26"}`, `rule: {topic: "AARON"}`, or
-// `rule: {person: "David"}` field auto-applies to every matching verse,
-// computed live from the relevant index rather than written into
-// verseTags — so it never mutates saved verse data.
+// A tag with a `rule: {strongs: "G26"}`, `rule: {topic: "AARON"}`,
+// `rule: {person: "David"}`, or `rule: {place: "Jerusalem"}` field
+// auto-applies to every matching verse, computed live from the relevant
+// index rather than written into verseTags — so it never mutates saved
+// verse data.
 
 let concordanceOnlyPromise = null;
 let topicsData = null;
@@ -4054,6 +4089,7 @@ let topicCategories = null; // { topicName: "person" | "place" | "topic" }
 let topicCategoriesPromise = null;
 let personsData = null;
 let personsPromise = null;
+let placeVersesIndex = null;
 let smartTagSetsCache = null; // Map<tagId, Set<verseKey>>
 
 function ensureConcordanceLoaded() {
@@ -4096,6 +4132,16 @@ function ensurePersonsLoaded() {
   return personsPromise;
 }
 
+function ensurePlaceVersesIndexLoaded() {
+  if (placeVersesIndex) return Promise.resolve();
+  return ensurePlacesLoaded().then(() => {
+    placeVersesIndex = {};
+    placesData.forEach((place) => {
+      if (place.verseKeys && place.verseKeys.length) placeVersesIndex[place.name] = place.verseKeys;
+    });
+  });
+}
+
 function invalidateSmartTagCache() {
   smartTagSetsCache = null;
 }
@@ -4131,6 +4177,8 @@ function getSmartTagSets() {
         smartTagSetsCache.set(tag.id, new Set(topicsData[tag.rule.topic] || []));
       } else if (tag.rule && tag.rule.person && personsData) {
         smartTagSetsCache.set(tag.id, new Set(personsData[tag.rule.person] || []));
+      } else if (tag.rule && tag.rule.place && placeVersesIndex) {
+        smartTagSetsCache.set(tag.id, new Set(placeVersesIndex[tag.rule.place] || []));
       } else if (tag.rule && tag.rule.phrase) {
         smartTagSetsCache.set(tag.id, new Set(versesMatchingPhrase(tag.rule.phrase, tag.rule.phraseAnd)));
       }
@@ -4150,7 +4198,7 @@ function smartTagIdsForKey(key) {
 }
 
 function anySmartTagsDefined() {
-  return tagsData.tags.some((t) => t.rule && (t.rule.strongs || t.rule.topic || t.rule.person));
+  return tagsData.tags.some((t) => t.rule && (t.rule.strongs || t.rule.topic || t.rule.person || t.rule.place));
 }
 
 function loadAnyDefinedSmartTagSources() {
@@ -4158,11 +4206,14 @@ function loadAnyDefinedSmartTagSources() {
   if (tagsData.tags.some((t) => t.rule && t.rule.strongs)) jobs.push(ensureConcordanceLoaded());
   if (tagsData.tags.some((t) => t.rule && t.rule.topic)) jobs.push(ensureTopicsLoaded());
   if (tagsData.tags.some((t) => t.rule && t.rule.person)) jobs.push(ensurePersonsLoaded());
+  if (tagsData.tags.some((t) => t.rule && t.rule.place)) jobs.push(ensurePlaceVersesIndexLoaded());
   return Promise.all(jobs);
 }
 
 async function openWordStudyPanel(key) {
   wordStudyVerseKey = key;
+  crossRefSidebarHistory = [];
+  el("crossRefSidebarBackBtn").classList.add("hidden");
   const { bookId, chapter, verse } = parseVerseKey(key);
   el("wordStudyRef").textContent = refLabel(bookId, chapter, verse);
   el("wordStudyPanel").classList.remove("hidden");
@@ -4170,7 +4221,10 @@ async function openWordStudyPanel(key) {
   el("wordStudyChips").classList.add("hidden");
   el("wordStudyLoading").classList.remove("hidden");
   setSidebarTab("word");
-  renderCrossRefChips(el("sidebarCrossRefsList"), key, (otherKey) => openCrossRefsSidebar(otherKey));
+  renderCrossRefChips(el("sidebarCrossRefsList"), key, (otherKey) => {
+    openVerseDetail(otherKey);
+    openCrossRefsSidebar(otherKey, { pushCurrent: true });
+  });
 
   await loadStrongsData();
   if (wordStudyVerseKey !== key) return; // panel closed or moved on while loading
@@ -4182,6 +4236,7 @@ async function openWordStudyPanel(key) {
 
 function closeWordStudyPanel() {
   wordStudyVerseKey = null;
+  crossRefSidebarHistory = [];
   el("wordStudyPanel").classList.add("hidden");
 }
 

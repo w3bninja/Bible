@@ -1866,6 +1866,7 @@ mark {
 }
 
 .word-study-ref {
+  flex: 1;
   font-family: var(--font-serif);
   font-size: 17px;
   font-weight: 600;
