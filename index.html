@@ -394,6 +394,9 @@
 
   <div id="wordStudyPanel" class="word-study-panel hidden">
     <div class="word-study-header">
+      <button id="crossRefSidebarBackBtn" class="icon-btn-outline hidden" title="Back to previous verse">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M12 5l-5 5 5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
       <div class="word-study-ref" id="wordStudyRef"></div>
       <button id="wordStudyCloseBtn" class="icon-btn-outline" title="Close">
         <svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -452,6 +455,10 @@
         <label id="newTagPersonRow">Auto-tag by person (optional)
           <input type="text" id="newTagPerson" list="personsDatalist" placeholder="e.g. David, Paul, Mary (sister of Martha)" />
           <datalist id="personsDatalist"></datalist>
+        </label>
+        <label id="newTagPlaceRow">Auto-tag by place (optional)
+          <input type="text" id="newTagPlace" list="placesDatalist" placeholder="e.g. Jerusalem, Bethlehem, Mount Sinai" />
+          <datalist id="placesDatalist"></datalist>
         </label>
         <label id="newTagPhraseRow">Auto-tag by phrase (optional)
           <input type="text" id="newTagPhrase" placeholder="e.g. kingdom of heaven" />
