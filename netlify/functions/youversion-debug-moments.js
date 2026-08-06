@@ -56,9 +56,20 @@ exports.handler = async (event) => {
   }
 
   // Try a couple of plausible endpoint paths since the exact REST path for
-  // listing moments isn't documented in detail anywhere accessible — report
-  // back whichever responds, and the raw body/status of each attempt.
-  const candidates = ["https://api.youversion.com/v1/moments", "https://api.youversion.com/moments"];
+  // listing moments isn't documented anywhere accessible for the official
+  // OAuth Platform API — report back whichever responds, and the raw
+  // body/status of each attempt. The moments.youversionapi.com host is
+  // real (found in an unofficial reverse-engineered mobile-app API client)
+  // but that client uses its own separate, hardcoded credentials — this
+  // just tests whether it also accepts a legitimately-issued Platform
+  // OAuth bearer token, not reusing anything from that other client.
+  const candidates = [
+    "https://api.youversion.com/v1/moments",
+    "https://api.youversion.com/moments",
+    "https://moments.youversionapi.com/3.1/items.json",
+    "https://moments.youversionapi.com/moments",
+    "https://moments.youversionapi.com/v1/moments",
+  ];
   const attempts = [];
 
   for (const url of candidates) {
