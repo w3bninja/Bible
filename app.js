@@ -4717,7 +4717,7 @@ function showLockScreen() {
 
 // ---------- Google sign-in ----------
 
-const GOOGLE_CLIENT_ID = "REPLACE_WITH_YOUR_GOOGLE_OAUTH_CLIENT_ID";
+const GOOGLE_CLIENT_ID = "207642071914-gaplnloqc7bi2be69ocbc45b9vee56f5.apps.googleusercontent.com";
 const GOOGLE_AUTHORIZE_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 
 function connectGoogle() {
