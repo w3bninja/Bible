@@ -17,17 +17,38 @@
       const error = params.get("error") || hashParams.get("error");
       const errorDescription = params.get("error_description") || hashParams.get("error_description");
       const expectedState = sessionStorage.getItem("yv_oauth_state");
-      const verifier = sessionStorage.getItem("yv_pkce_verifier");
-      sessionStorage.removeItem("yv_oauth_state");
-      sessionStorage.removeItem("yv_pkce_verifier");
 
       function fail(reason, detail) {
+        sessionStorage.removeItem("yv_oauth_state");
+        sessionStorage.removeItem("yv_pkce_verifier");
+        sessionStorage.removeItem("yv_relayed_callback");
         const q = new URLSearchParams({ yvConnect: "error", reason });
         if (detail) q.set("detail", detail);
         window.location.href = "/?" + q.toString();
       }
 
       if (error) return fail("provider_error", errorDescription || error);
+
+      // YouVersion's /authorize redirect lands here WITHOUT a `code` — only
+      // `state` (plus basic profile fields on some responses) — because the
+      // real authorization code is minted by a second hop through
+      // YouVersion's own /auth/callback endpoint (authenticated via the
+      // session cookie set on their domain during login), which then
+      // redirects back here again, this time with `code` present. See
+      // developers.youversion.com/sign-in-apis. Relay once; if we land back
+      // here a second time still without a code, that's a real failure.
+      if (!code && state && !sessionStorage.getItem("yv_relayed_callback")) {
+        if (state !== expectedState) return fail("state_mismatch");
+        sessionStorage.setItem("yv_relayed_callback", "1");
+        window.location.href = "https://api.youversion.com/auth/callback?" + params.toString();
+        return;
+      }
+
+      const verifier = sessionStorage.getItem("yv_pkce_verifier");
+      sessionStorage.removeItem("yv_oauth_state");
+      sessionStorage.removeItem("yv_pkce_verifier");
+      sessionStorage.removeItem("yv_relayed_callback");
+
       if (!code) return fail("missing_code", window.location.search + window.location.hash);
       if (!verifier) return fail("missing_verifier_lost_session");
       if (state !== expectedState) return fail("state_mismatch");

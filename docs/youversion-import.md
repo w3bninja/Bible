@@ -89,9 +89,27 @@ Built and deployed (pending live test):
 a bare static file server, not the real Netlify runtime, so `@netlify/blobs` and the Functions
 can't execute there. Testing requires the live deployed site.
 
+## Bug fix: `missing_code` on login (2026-08-06)
+
+Live testing surfaced `?yvConnect=error&reason=missing_code&detail=?state=...` — the callback
+page's assumption of a plain 2-step OAuth flow (`/authorize` → straight to `code`) was wrong.
+Per [developers.youversion.com/sign-in-apis](https://developers.youversion.com/sign-in-apis),
+YouVersion actually uses a 3-step flow: `/authorize` redirects back to our `redirect_uri` with
+only `state` (no `code` yet); the app must then hit YouVersion's own
+`https://api.youversion.com/auth/callback` endpoint (authenticated via the session cookie set on
+their domain during login), which 302-redirects back to our `redirect_uri` a second time — this
+time with the real `code`.
+
+Fixed in [`youversion-callback.html`](../youversion-callback.html): when the first landing has
+`state` but no `code`, relay once to `/auth/callback` (passing through whatever query params
+arrived) instead of failing immediately. A `sessionStorage` flag (`yv_relayed_callback`) prevents
+looping if the second landing still lacks a code. Not yet verified against a real login — still
+needs the live test below.
+
 ## Next step
 
 Deploy to `saanctify.netlify.app`, click "Connect YouVersion account" on the Tags page, complete
-the real YouVersion login/consent, and confirm the callback lands back with `?yvConnect=success`.
+the real YouVersion login/consent, and confirm the callback lands back with `?yvConnect=success`
+(watch for a brief flash through `api.youversion.com` mid-flow — that's the new relay hop, expected).
 Once connected, hit `/api/youversion/debug-moments` (e.g. via curl) to see the real Moments API
 shape — that's what determines the actual import/mapping code, still to be written.
