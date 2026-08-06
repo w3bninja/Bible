@@ -36,7 +36,13 @@ exports.handler = async (event) => {
     shares[token] = share;
     await store().set("shares.json", JSON.stringify(shares));
 
-    const tagsRaw = await store().get("tags.json");
+    // Tags are private per-account now — a share created before accounts
+    // existed has no ownerId and can't be resolved anymore.
+    if (!share.ownerId) {
+      return { statusCode: 404, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: "not_found" }) };
+    }
+
+    const tagsRaw = await store().get(`tags-${share.ownerId}.json`);
     const tagsData = tagsRaw ? JSON.parse(tagsRaw) : { tags: [], verseTags: {} };
     const tag = (tagsData.tags || []).find((t) => t.id === share.tagId);
 

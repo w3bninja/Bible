@@ -2,6 +2,7 @@
 let bible = null;
 let booksById = new Map();
 let tagsData = { tags: [], verseTags: {}, links: [] }; // tags: [{id,name,hue}], verseTags[key] = { tagIds:[], note:'' }, links: [{id, a:[keys], b:[keys], note}]
+let currentUser = null; // { sub, email, name, picture, role } once signed in, else null
 let categoriesData = { categories: [] }; // categories: [{id, name, description, tagIds:[], entries:[{id,key,note}]}]
 let currentStudyId = null; // for study detail view
 let editingStudyId = null; // set when the New Study modal is in edit mode
@@ -65,21 +66,94 @@ function escapeHtml(str) {
 
 function sitePasswordHeaders() {
   const pw = localStorage.getItem("bible-study:sitePassword");
-  return pw ? { "X-Site-Password": pw } : {};
+  const sessionToken = localStorage.getItem("bible-study:sessionToken");
+  return {
+    ...(pw ? { "X-Site-Password": pw } : {}),
+    ...(sessionToken ? { "X-Session-Token": sessionToken } : {}),
+  };
+}
+
+// A 401 from the API means either the site password is wrong/missing (show
+// the passphrase lock screen, as before accounts existed) or the site
+// password is fine but there's no valid signed-in session (show the Google
+// login screen) — the two gates are independent, so a failure needs to
+// check which one actually failed rather than always assuming the same
+// screen as before.
+async function handleAuthFailure(res) {
+  let reason = null;
+  try {
+    reason = (await res.json()).error;
+  } catch {
+    // ignore — fall through to the site-password screen as the safer default
+  }
+  if (reason === "no_session") showLoginScreen();
+  else showLockScreen();
 }
 
 async function fetchJSON(url) {
   const isApi = url.startsWith("/api/");
   const res = await fetch(url, { cache: "no-store", headers: isApi ? sitePasswordHeaders() : undefined });
   if (isApi && res.status === 401) {
-    showLockScreen();
+    await handleAuthFailure(res);
     throw new Error("Unauthorized");
   }
   if (!res.ok) throw new Error(`Failed to load ${url}: ${res.status}`);
   return res.json();
 }
 
+// The session token is base64url(JSON payload).base64url(HMAC signature) —
+// not encrypted, just signed, so the payload can be read client-side for
+// display (name/photo/role) without a round trip. The server always
+// re-verifies the signature itself on every write; this decode is purely
+// for the UI and is never trusted for anything security-relevant.
+function decodeSessionToken(token) {
+  try {
+    const [body] = token.split(".");
+    let base64 = body.replace(/-/g, "+").replace(/_/g, "/");
+    while (base64.length % 4) base64 += "="; // atob expects padded input
+    return JSON.parse(atob(base64));
+  } catch {
+    return null;
+  }
+}
+
+function loadCurrentUserFromStorage() {
+  const token = localStorage.getItem("bible-study:sessionToken");
+  currentUser = token ? decodeSessionToken(token) : null;
+  if (currentUser && currentUser.exp && Date.now() > currentUser.exp) {
+    localStorage.removeItem("bible-study:sessionToken");
+    currentUser = null;
+  }
+}
+
+function handleGoogleSessionParam() {
+  const params = new URLSearchParams(window.location.search);
+  const sessionToken = params.get("sessionToken");
+  const googleConnect = params.get("googleConnect");
+  if (!sessionToken && !googleConnect) return;
+
+  window.history.replaceState({}, "", window.location.pathname);
+  if (sessionToken) {
+    localStorage.setItem("bible-study:sessionToken", sessionToken);
+    loadCurrentUserFromStorage();
+  } else {
+    alert(`Couldn't sign in with Google.\nReason: ${params.get("reason") || "unknown"}`);
+  }
+}
+
+function isOwner() {
+  // Local dev (.claude/server.ps1) has no session concept at all — it
+  // keeps serving the flat tags.json/categories.json unconditionally, same
+  // as before accounts existed — so treat local dev as the owner rather
+  // than hiding every Studies edit control during local testing.
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") return true;
+  return !!currentUser && currentUser.role === "owner";
+}
+
 async function init() {
+  handleGoogleSessionParam();
+  loadCurrentUserFromStorage();
+
   try {
     const [bibleData, tagsJson, categoriesJson] = await Promise.all([
       fetchJSON("data/bible.json"),
@@ -2220,7 +2294,11 @@ async function saveCategories() {
       body: JSON.stringify(categoriesData),
     });
     if (res.status === 401) {
-      showLockScreen();
+      await handleAuthFailure(res);
+      return;
+    }
+    if (res.status === 403) {
+      console.error("Studies save rejected: owner-only");
       return;
     }
     if (!res.ok) throw new Error(`Save failed: ${res.status}`);
@@ -2229,7 +2307,12 @@ async function saveCategories() {
   }
 }
 
+function applyOwnerGating() {
+  document.querySelectorAll(".owner-only").forEach((elm) => elm.classList.toggle("hidden", !isOwner()));
+}
+
 function renderStudiesView() {
+  applyOwnerGating();
   const list = el("studiesList");
   list.innerHTML = "";
 
@@ -2260,6 +2343,7 @@ function openStudyDetail(id) {
 }
 
 function renderStudyDetail() {
+  applyOwnerGating();
   const study = categoriesData.categories.find((c) => c.id === currentStudyId);
   if (!study) {
     renderStudiesView();
@@ -2277,16 +2361,18 @@ function renderStudyDetail() {
     const tag = tagsData.tags.find((t) => t.id === tagId);
     if (!tag) return;
     const { bg, text: fg } = chipColors(tag.hue);
-    const chip = document.createElement("button");
-    chip.className = "tag-chip-removable";
+    const chip = document.createElement(isOwner() ? "button" : "span");
+    chip.className = isOwner() ? "tag-chip-removable" : "tag-chip-smart";
     chip.style.background = bg;
     chip.style.color = fg;
-    chip.innerHTML = `<span>${escapeHtml(tag.name)}</span><span class="x">×</span>`;
-    chip.addEventListener("click", () => {
-      study.tagIds = study.tagIds.filter((id) => id !== tagId);
-      scheduleSaveCategories();
-      renderStudyDetail();
-    });
+    chip.innerHTML = isOwner() ? `<span>${escapeHtml(tag.name)}</span><span class="x">×</span>` : `<span>${escapeHtml(tag.name)}</span>`;
+    if (isOwner()) {
+      chip.addEventListener("click", () => {
+        study.tagIds = study.tagIds.filter((id) => id !== tagId);
+        scheduleSaveCategories();
+        renderStudyDetail();
+      });
+    }
     chipsContainer.appendChild(chip);
   });
 
@@ -2326,17 +2412,19 @@ function renderStudyDetail() {
           <div class="study-entry-text">${escapeHtml(text)}</div>
           ${entry.note ? `<div class="study-entry-note">${escapeHtml(entry.note)}</div>` : ""}
         `;
-        const removeBtn = document.createElement("button");
-        removeBtn.type = "button";
-        removeBtn.className = "btn btn-outline btn-small";
-        removeBtn.textContent = "Remove";
-        removeBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          study.entries = study.entries.filter((en) => en.id !== entry.id);
-          scheduleSaveCategories();
-          renderStudyDetail();
-        });
-        card.appendChild(removeBtn);
+        if (isOwner()) {
+          const removeBtn = document.createElement("button");
+          removeBtn.type = "button";
+          removeBtn.className = "btn btn-outline btn-small";
+          removeBtn.textContent = "Remove";
+          removeBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            study.entries = study.entries.filter((en) => en.id !== entry.id);
+            scheduleSaveCategories();
+            renderStudyDetail();
+          });
+          card.appendChild(removeBtn);
+        }
         card.addEventListener("click", () => openVerseDetail(entry.key));
         entriesList.appendChild(card);
       });
@@ -3659,7 +3747,34 @@ function populateShareTagSelect() {
   });
 }
 
+function renderAccountPanel() {
+  const panel = el("accountPanel");
+  if (!currentUser) {
+    panel.innerHTML = '<div class="empty-msg">Not signed in.</div>';
+    return;
+  }
+  panel.innerHTML = `
+    <div class="account-row">
+      ${currentUser.picture ? `<img src="${escapeHtml(currentUser.picture)}" class="account-avatar" alt="" />` : ""}
+      <div class="account-info">
+        <div class="account-name">${escapeHtml(currentUser.name || currentUser.email || "Signed in")}</div>
+        <div class="account-role">${currentUser.role === "owner" ? "Owner" : "Member"} · ${escapeHtml(currentUser.email || "")}</div>
+      </div>
+    </div>
+  `;
+  const signOutBtn = document.createElement("button");
+  signOutBtn.type = "button";
+  signOutBtn.className = "btn btn-outline btn-small";
+  signOutBtn.textContent = "Sign out";
+  signOutBtn.addEventListener("click", () => {
+    localStorage.removeItem("bible-study:sessionToken");
+    window.location.reload();
+  });
+  panel.appendChild(signOutBtn);
+}
+
 async function renderSharesSection() {
+  renderAccountPanel();
   populateShareTagSelect();
   const list = el("sharesList");
   list.innerHTML = '<div class="empty-msg">Loading…</div>';
@@ -3667,7 +3782,7 @@ async function renderSharesSection() {
   try {
     const res = await fetch("/api/shares", { headers: sitePasswordHeaders() });
     if (res.status === 401) {
-      showLockScreen();
+      await handleAuthFailure(res);
       return;
     }
     const shares = await res.json();
@@ -3741,7 +3856,7 @@ el("createShareBtn").addEventListener("click", async () => {
       body: JSON.stringify({ tagId: tag.id, tagName: tag.name }),
     });
     if (res.status === 401) {
-      showLockScreen();
+      await handleAuthFailure(res);
       return;
     }
     await renderSharesSection();
@@ -4532,7 +4647,7 @@ async function saveTags() {
       body: JSON.stringify(tagsData),
     });
     if (res.status === 401) {
-      showLockScreen();
+      await handleAuthFailure(res);
       return;
     }
     if (!res.ok) throw new Error(`Save failed: ${res.status}`);
@@ -4569,8 +4684,21 @@ function showLockScreen() {
     const candidate = input.value;
 
     try {
+      // /api/tags now also requires a signed-in session, so it can't be
+      // used alone to validate just the site password anymore — a
+      // "no_session" response means the passphrase itself was fine (that
+      // check passed before the session check even ran), just nothing to
+      // sign in with yet, which the Google login screen handles next.
       const res = await fetch("/api/tags", { cache: "no-store", headers: { "X-Site-Password": candidate } });
-      if (res.ok) {
+      let reason = null;
+      if (!res.ok) {
+        try {
+          reason = (await res.json()).error;
+        } catch {
+          // ignore
+        }
+      }
+      if (res.ok || reason === "no_session") {
         localStorage.setItem("bible-study:sitePassword", candidate);
         overlay.remove();
         window.location.reload();
@@ -4585,6 +4713,40 @@ function showLockScreen() {
   });
 
   document.getElementById("lockScreenInput").focus();
+}
+
+// ---------- Google sign-in ----------
+
+const GOOGLE_CLIENT_ID = "REPLACE_WITH_YOUR_GOOGLE_OAUTH_CLIENT_ID";
+const GOOGLE_AUTHORIZE_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
+
+function connectGoogle() {
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: `${window.location.origin}/api/google/callback`,
+    scope: "openid profile email",
+    prompt: "select_account",
+  });
+  window.location.href = `${GOOGLE_AUTHORIZE_ENDPOINT}?${params}`;
+}
+
+function showLoginScreen() {
+  if (document.getElementById("loginScreenOverlay")) return;
+
+  const overlay = document.createElement("div");
+  overlay.id = "loginScreenOverlay";
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal lock-screen-modal">
+      <img src="assets/anchor.svg" class="lock-screen-logo" alt="Anchor" />
+      <h2>Sign in</h2>
+      <p class="settings-section-hint">Your own private tags and notes, plus everything shared (Studies, Topics, Insights). Sign in with Google to continue.</p>
+      <button type="button" id="googleSignInBtn" class="btn btn-accent-solid">Sign in with Google</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById("googleSignInBtn").addEventListener("click", connectGoogle);
 }
 
 init();

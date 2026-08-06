@@ -178,8 +178,8 @@
           <div class="tags-page-header">
             <h1 class="page-heading">Studies</h1>
             <div class="tags-page-header-actions">
-              <button id="importTopicsBtn" class="btn btn-outline btn-small">Import from Topics…</button>
-              <button id="newStudyBtn" class="btn btn-accent-solid btn-small">+ New Study</button>
+              <button id="importTopicsBtn" class="btn btn-outline btn-small owner-only">Import from Topics…</button>
+              <button id="newStudyBtn" class="btn btn-accent-solid btn-small owner-only">+ New Study</button>
             </div>
           </div>
           <p class="settings-section-hint">Group tags and standalone verses+notes under a named study — for when a single tag doesn't need a whole word, but a topic deserves its own space.</p>
@@ -216,17 +216,17 @@
             <p id="studyDetailDescription" class="settings-section-hint"></p>
           </div>
           <div class="study-detail-actions">
-            <button id="studyEditBtn" class="btn btn-outline btn-small">Edit</button>
-            <button id="studyDeleteBtn" class="btn btn-outline btn-small">Delete</button>
+            <button id="studyEditBtn" class="btn btn-outline btn-small owner-only">Edit</button>
+            <button id="studyDeleteBtn" class="btn btn-outline btn-small owner-only">Delete</button>
           </div>
         </div>
 
         <h2 class="settings-section-title">Linked Tags</h2>
         <div id="studyTagChips" class="study-tag-chips"></div>
-        <select id="studyAddTagSelect" class="study-add-tag-select"></select>
+        <select id="studyAddTagSelect" class="study-add-tag-select owner-only"></select>
 
         <h2 class="settings-section-title">Verses &amp; Notes</h2>
-        <button id="studyAddEntryBtn" class="btn btn-outline btn-small">+ Add Verse</button>
+        <button id="studyAddEntryBtn" class="btn btn-outline btn-small owner-only">+ Add Verse</button>
         <div id="studyEntriesList" class="study-entries-list"></div>
 
         <h2 class="settings-section-title">From Linked Tags</h2>
@@ -305,6 +305,11 @@
 
       <div id="settingsView" class="view-content hidden">
         <h1 class="page-heading">Settings</h1>
+
+        <div class="settings-section">
+          <h2 class="settings-section-title">Account</h2>
+          <div id="accountPanel" class="account-panel"></div>
+        </div>
 
         <div class="settings-section">
           <h2 class="settings-section-title">Audio Reading</h2>

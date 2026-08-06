@@ -1,11 +1,12 @@
 // Authenticated: create, list, and revoke read-only share links. The actual
 // public viewing endpoint is share-view.js, which deliberately has NO auth
 // check (that's the whole point of a share link) but only ever exposes the
-// one tag's verses named by the token, never the full tags.json blob.
+// one tag's verses named by the token, never a full tags blob.
 
 const { getStore, connectLambda } = require("@netlify/blobs");
 const crypto = require("crypto");
 const { isAuthorized, unauthorizedResponse } = require("./_auth");
+const { getSessionUser } = require("./_session");
 
 const KEY = "shares.json";
 
@@ -22,9 +23,18 @@ exports.handler = async (event) => {
   connectLambda(event);
   if (!isAuthorized(event)) return unauthorizedResponse();
 
+  const user = getSessionUser(event);
+  if (!user) {
+    return { statusCode: 401, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: "no_session" }) };
+  }
+
   if (event.httpMethod === "GET") {
     const shares = await readShares();
-    return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(shares) };
+    // Each account only sees/manages its own share links now that tags are
+    // per-user — a share record from before accounts existed (no ownerId)
+    // is treated as belonging to nobody and won't show up for anyone.
+    const own = Object.fromEntries(Object.entries(shares).filter(([, s]) => s.ownerId === user.sub));
+    return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(own) };
   }
 
   if (event.httpMethod === "POST") {
@@ -40,7 +50,7 @@ exports.handler = async (event) => {
 
     const shares = await readShares();
     const token = crypto.randomBytes(16).toString("hex");
-    shares[token] = { tagId: body.tagId, tagName: body.tagName, createdAt: Date.now() };
+    shares[token] = { tagId: body.tagId, tagName: body.tagName, ownerId: user.sub, createdAt: Date.now() };
     await store().set(KEY, JSON.stringify(shares));
 
     return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) };
@@ -51,6 +61,9 @@ exports.handler = async (event) => {
     if (!token) return { statusCode: 400, body: "Missing token" };
 
     const shares = await readShares();
+    if (shares[token] && shares[token].ownerId !== user.sub) {
+      return { statusCode: 403, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: "not_your_share" }) };
+    }
     delete shares[token];
     await store().set(KEY, JSON.stringify(shares));
 

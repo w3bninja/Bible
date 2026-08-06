@@ -1657,6 +1657,38 @@ mark {
   margin-bottom: 14px;
 }
 
+.account-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.account-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.account-role {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .lock-screen-modal { z-index: 20; text-align: center; }
 
 .lock-screen-logo {

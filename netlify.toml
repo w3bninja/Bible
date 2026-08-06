@@ -40,3 +40,9 @@
   to = "/.netlify/functions/share-view"
   status = 200
   force = true
+
+[[redirects]]
+  from = "/api/google/callback"
+  to = "/.netlify/functions/google-callback"
+  status = 200
+  force = true

@@ -1,20 +1,33 @@
 const { getStore, connectLambda } = require("@netlify/blobs");
 const { isAuthorized, unauthorizedResponse } = require("./_auth");
+const { getSessionUser } = require("./_session");
 
-const KEY = "tags.json";
 const EMPTY = '{"tags":[],"verseTags":{}}';
 
 function store() {
   return getStore("bible-study");
 }
 
+// Tags/notes are private per-user — one blob per account, keyed by the
+// verified session's sub (never a client-supplied value, so one user can't
+// read/write another's data by passing a different id).
+function keyFor(sub) {
+  return `tags-${sub}.json`;
+}
+
 exports.handler = async (event) => {
   connectLambda(event);
   if (!isAuthorized(event)) return unauthorizedResponse();
 
+  const user = getSessionUser(event);
+  if (!user) {
+    return { statusCode: 401, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: "no_session" }) };
+  }
+  const key = keyFor(user.sub);
+
   if (event.httpMethod === "GET") {
     try {
-      const data = await store().get(KEY);
+      const data = await store().get(key);
       return {
         statusCode: 200,
         headers: { "Content-Type": "application/json; charset=utf-8" },
@@ -34,7 +47,7 @@ exports.handler = async (event) => {
     }
 
     try {
-      await store().set(KEY, JSON.stringify(parsed));
+      await store().set(key, JSON.stringify(parsed));
       return {
         statusCode: 200,
         headers: { "Content-Type": "application/json; charset=utf-8" },

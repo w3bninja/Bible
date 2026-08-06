@@ -1,19 +1,30 @@
 const { getStore, connectLambda } = require("@netlify/blobs");
 const { isAuthorized, unauthorizedResponse } = require("./_auth");
+const { getSessionUser } = require("./_session");
 
 // Public OAuth client_id — not a secret, safe to live in source. This is a
 // PKCE (public client) flow, so no client secret exists anywhere.
 const YOUVERSION_APP_KEY = "Z8ou4eKH1jLzXHa8QOvlNnCgLQmXRtY2tyIfBg31o8omy0IO";
 const TOKEN_ENDPOINT = "https://api.youversion.com/auth/token";
-const TOKENS_KEY = "youversion-tokens.json";
 
 function store() {
   return getStore("bible-study");
 }
 
+// Each logged-in account connects its own YouVersion account independently
+// — was a single global blob back when this app assumed only one user.
+function keyFor(sub) {
+  return `youversion-tokens-${sub}.json`;
+}
+
 exports.handler = async (event) => {
   connectLambda(event);
   if (!isAuthorized(event)) return unauthorizedResponse();
+
+  const user = getSessionUser(event);
+  if (!user) {
+    return { statusCode: 401, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: "no_session" }) };
+  }
 
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method not allowed" };
@@ -53,7 +64,7 @@ exports.handler = async (event) => {
     const expiresAt = Date.now() + (json.expires_in || 3599) * 1000;
 
     await store().set(
-      TOKENS_KEY,
+      keyFor(user.sub),
       JSON.stringify({
         access_token: json.access_token,
         refresh_token: json.refresh_token,
