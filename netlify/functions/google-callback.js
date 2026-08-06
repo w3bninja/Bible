@@ -7,7 +7,10 @@
 
 const { issueSession } = require("./_session");
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+// Public value, not a secret — same one hardcoded in app.js for the
+// authorize-redirect step. Both sides of the exchange need it; only
+// GOOGLE_CLIENT_SECRET is actually sensitive and lives in an env var.
+const GOOGLE_CLIENT_ID = "207642071914-gaplnloqc7bi2be69ocbc45b9vee56f5.apps.googleusercontent.com";
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 
 function decodeIdTokenClaims(idToken) {
@@ -20,10 +23,12 @@ function decodeIdTokenClaims(idToken) {
   return JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
 }
 
-function redirectWithError(reason) {
+function redirectWithError(reason, detail) {
+  const q = new URLSearchParams({ googleConnect: "error", reason });
+  if (detail) q.set("detail", detail.slice(0, 300));
   return {
     statusCode: 302,
-    headers: { Location: `/?googleConnect=error&reason=${encodeURIComponent(reason)}` },
+    headers: { Location: `/?${q.toString()}` },
   };
 }
 
@@ -49,7 +54,7 @@ exports.handler = async (event) => {
     });
 
     const text = await res.text();
-    if (!res.ok) return redirectWithError("token_exchange_failed");
+    if (!res.ok) return redirectWithError("token_exchange_failed", text);
 
     const json = JSON.parse(text);
     const claims = decodeIdTokenClaims(json.id_token);

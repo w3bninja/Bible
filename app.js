@@ -137,7 +137,8 @@ function handleGoogleSessionParam() {
     localStorage.setItem("bible-study:sessionToken", sessionToken);
     loadCurrentUserFromStorage();
   } else {
-    alert(`Couldn't sign in with Google.\nReason: ${params.get("reason") || "unknown"}`);
+    const detail = params.get("detail");
+    alert(`Couldn't sign in with Google.\nReason: ${params.get("reason") || "unknown"}${detail ? `\nDetail: ${detail}` : ""}`);
   }
 }
 
