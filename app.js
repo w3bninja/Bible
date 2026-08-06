@@ -110,6 +110,41 @@ function loadCurrentUserFromStorage() {
     localStorage.removeItem("bible-study:sessionToken");
     currentUser = null;
   }
+  renderSidebarAccountArea();
+}
+
+function renderSidebarAccountArea() {
+  const area = el("sidebarAccountArea");
+  if (!area) return;
+  area.innerHTML = "";
+
+  if (!currentUser) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "nav-item sidebar-signin-btn";
+    btn.title = "Sign in with Google";
+    btn.innerHTML = `
+      <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.3"/><path d="M6.5 10.5l2.2 2.2L13.5 8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Sign in</span>
+    `;
+    btn.addEventListener("click", connectGoogle);
+    area.appendChild(btn);
+    return;
+  }
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "nav-item sidebar-account-btn";
+  btn.title = currentUser.name || currentUser.email || "Account";
+  btn.innerHTML = `
+    ${currentUser.picture ? `<img src="${escapeHtml(currentUser.picture)}" class="sidebar-account-avatar" alt="" />` : '<span class="sidebar-account-avatar sidebar-account-avatar-fallback"></span>'}
+    <span>${escapeHtml(currentUser.name || currentUser.email || "Account")}</span>
+  `;
+  btn.addEventListener("click", () => {
+    renderSharesSection();
+    showView("settings");
+  });
+  area.appendChild(btn);
 }
 
 function handleGoogleSessionParam() {

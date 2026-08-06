@@ -2,6 +2,7 @@ const { getStore, connectLambda } = require("@netlify/blobs");
 const { getSessionUser } = require("./_session");
 
 const EMPTY = '{"tags":[],"verseTags":{}}';
+const LEGACY_KEY = "tags.json"; // the single shared blob from before accounts existed
 
 function store() {
   return getStore("bible-study");
@@ -12,6 +13,18 @@ function store() {
 // read/write another's data by passing a different id).
 function keyFor(sub) {
   return `tags-${sub}.json`;
+}
+
+// One-time migration: the owner's tags/notes from before accounts existed
+// live under the old shared key. The first time the owner's own per-user
+// blob is empty, pull that legacy data forward instead of returning
+// nothing — and write it to the new key so this only ever runs once.
+async function migrateLegacyDataIfOwner(user) {
+  if (user.role !== "owner") return null;
+  const legacy = await store().get(LEGACY_KEY);
+  if (!legacy) return null;
+  await store().set(keyFor(user.sub), legacy);
+  return legacy;
 }
 
 exports.handler = async (event) => {
@@ -27,7 +40,8 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers: { "Content-Type": "application/json; charset=utf-8" }, body: EMPTY };
     }
     try {
-      const data = await store().get(keyFor(user.sub));
+      let data = await store().get(keyFor(user.sub));
+      if (!data) data = await migrateLegacyDataIfOwner(user);
       return {
         statusCode: 200,
         headers: { "Content-Type": "application/json; charset=utf-8" },

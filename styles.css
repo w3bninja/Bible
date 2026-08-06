@@ -117,6 +117,25 @@ textarea, input {
 
 .app-shell.sidebar-collapsed .nav-item span:not(.title-mark) { display: none; }
 
+.sidebar-account-area {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.sidebar-account-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.sidebar-account-avatar-fallback {
+  background: var(--accent-bg);
+  display: inline-block;
+}
+
 .nav-item.active {
   background: var(--accent-bg);
   color: var(--accent-text);
