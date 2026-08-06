@@ -61,9 +61,10 @@
 
       try {
         const sitePassword = localStorage.getItem("bible-study:sitePassword") || "";
+        const sessionToken = localStorage.getItem("bible-study:sessionToken") || "";
         const res = await fetch("/api/youversion/token", {
           method: "POST",
-          headers: { "Content-Type": "application/json", "X-Site-Password": sitePassword },
+          headers: { "Content-Type": "application/json", "X-Site-Password": sitePassword, "X-Session-Token": sessionToken },
           body: JSON.stringify({
             code,
             code_verifier: verifier,
