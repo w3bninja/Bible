@@ -47,7 +47,7 @@ function verify(token) {
 
 // Pulls the session user off a Netlify Function event, or null if there
 // isn't a valid one. Endpoints that need per-user identity (tags, Studies
-// writes, YouVersion connect) call this in addition to isAuthorized().
+// writes, YouVersion connect) call this directly.
 function getSessionUser(event) {
   const token = event.headers["x-session-token"] || event.headers["X-Session-Token"];
   return verify(token);

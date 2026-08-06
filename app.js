@@ -64,37 +64,23 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-function sitePasswordHeaders() {
-  const pw = localStorage.getItem("bible-study:sitePassword");
+function sessionHeaders() {
   const sessionToken = localStorage.getItem("bible-study:sessionToken");
-  return {
-    ...(pw ? { "X-Site-Password": pw } : {}),
-    ...(sessionToken ? { "X-Session-Token": sessionToken } : {}),
-  };
+  return sessionToken ? { "X-Session-Token": sessionToken } : {};
 }
 
-// A 401 from the API means either the site password is wrong/missing (show
-// the passphrase lock screen, as before accounts existed) or the site
-// password is fine but there's no valid signed-in session (show the Google
-// login screen) — the two gates are independent, so a failure needs to
-// check which one actually failed rather than always assuming the same
-// screen as before.
-async function handleAuthFailure(res) {
-  let reason = null;
-  try {
-    reason = (await res.json()).error;
-  } catch {
-    // ignore — fall through to the site-password screen as the safer default
-  }
-  if (reason === "no_session") showLoginScreen();
-  else showLockScreen();
+// The only reason an API call 401s now is a missing/expired session — the
+// site password gate was removed, browsing is public, and only saving
+// tags/notes (or owner-only Studies writes) needs an account.
+async function handleAuthFailure() {
+  showLoginScreen();
 }
 
 async function fetchJSON(url) {
   const isApi = url.startsWith("/api/");
-  const res = await fetch(url, { cache: "no-store", headers: isApi ? sitePasswordHeaders() : undefined });
+  const res = await fetch(url, { cache: "no-store", headers: isApi ? sessionHeaders() : undefined });
   if (isApi && res.status === 401) {
-    await handleAuthFailure(res);
+    await handleAuthFailure();
     throw new Error("Unauthorized");
   }
   if (!res.ok) throw new Error(`Failed to load ${url}: ${res.status}`);
@@ -1432,7 +1418,7 @@ async function refreshYouVersionStatus() {
   disconnectBtn.classList.add("hidden");
 
   try {
-    const res = await fetch("/api/youversion/status", { headers: sitePasswordHeaders() });
+    const res = await fetch("/api/youversion/status", { headers: sessionHeaders() });
     const data = await res.json();
     if (data.connected) {
       statusText.textContent = "YouVersion account connected.";
@@ -1452,7 +1438,7 @@ el("youversionConnectBtn").addEventListener("click", connectYouVersion);
 
 el("youversionDisconnectBtn").addEventListener("click", async () => {
   try {
-    await fetch("/api/youversion/status", { method: "DELETE", headers: sitePasswordHeaders() });
+    await fetch("/api/youversion/status", { method: "DELETE", headers: sessionHeaders() });
   } catch (err) {
     console.error(err);
   }
@@ -2291,11 +2277,11 @@ async function saveCategories() {
   try {
     const res = await fetch("/api/categories", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...sitePasswordHeaders() },
+      headers: { "Content-Type": "application/json", ...sessionHeaders() },
       body: JSON.stringify(categoriesData),
     });
     if (res.status === 401) {
-      await handleAuthFailure(res);
+      await handleAuthFailure();
       return;
     }
     if (res.status === 403) {
@@ -3787,9 +3773,9 @@ async function renderSharesSection() {
   list.innerHTML = '<div class="empty-msg">Loading…</div>';
 
   try {
-    const res = await fetch("/api/shares", { headers: sitePasswordHeaders() });
+    const res = await fetch("/api/shares", { headers: sessionHeaders() });
     if (res.status === 401) {
-      await handleAuthFailure(res);
+      await handleAuthFailure();
       return;
     }
     const shares = await res.json();
@@ -3835,7 +3821,7 @@ async function renderSharesSection() {
       revokeBtn.className = "btn btn-outline btn-small";
       revokeBtn.textContent = "Revoke";
       revokeBtn.addEventListener("click", async () => {
-        await fetch(`/api/shares?t=${encodeURIComponent(token)}`, { method: "DELETE", headers: sitePasswordHeaders() });
+        await fetch(`/api/shares?t=${encodeURIComponent(token)}`, { method: "DELETE", headers: sessionHeaders() });
         renderSharesSection();
       });
       row.appendChild(revokeBtn);
@@ -3859,11 +3845,11 @@ el("createShareBtn").addEventListener("click", async () => {
   try {
     const res = await fetch("/api/shares", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...sitePasswordHeaders() },
+      headers: { "Content-Type": "application/json", ...sessionHeaders() },
       body: JSON.stringify({ tagId: tag.id, tagName: tag.name }),
     });
     if (res.status === 401) {
-      await handleAuthFailure(res);
+      await handleAuthFailure();
       return;
     }
     await renderSharesSection();
@@ -4650,11 +4636,11 @@ async function saveTags() {
   try {
     const res = await fetch("/api/tags", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...sitePasswordHeaders() },
+      headers: { "Content-Type": "application/json", ...sessionHeaders() },
       body: JSON.stringify(tagsData),
     });
     if (res.status === 401) {
-      await handleAuthFailure(res);
+      await handleAuthFailure();
       return;
     }
     if (!res.ok) throw new Error(`Save failed: ${res.status}`);
@@ -4664,63 +4650,6 @@ async function saveTags() {
 }
 
 // ---------- Site password lock screen ----------
-
-function showLockScreen() {
-  if (document.getElementById("lockScreenOverlay")) return;
-
-  const overlay = document.createElement("div");
-  overlay.id = "lockScreenOverlay";
-  overlay.className = "modal-overlay";
-  overlay.innerHTML = `
-    <div class="modal lock-screen-modal">
-      <img src="assets/anchor.svg" class="lock-screen-logo" alt="Anchor" />
-      <h2>Enter passphrase</h2>
-      <form id="lockScreenForm">
-        <input type="password" id="lockScreenInput" autocomplete="current-password" placeholder="Passphrase" required />
-        <div id="lockScreenError" class="lock-screen-error hidden">Incorrect passphrase.</div>
-        <button type="submit" class="btn btn-accent-solid">Unlock</button>
-      </form>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-
-  document.getElementById("lockScreenForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const input = document.getElementById("lockScreenInput");
-    const errorEl = document.getElementById("lockScreenError");
-    const candidate = input.value;
-
-    try {
-      // /api/tags now also requires a signed-in session, so it can't be
-      // used alone to validate just the site password anymore — a
-      // "no_session" response means the passphrase itself was fine (that
-      // check passed before the session check even ran), just nothing to
-      // sign in with yet, which the Google login screen handles next.
-      const res = await fetch("/api/tags", { cache: "no-store", headers: { "X-Site-Password": candidate } });
-      let reason = null;
-      if (!res.ok) {
-        try {
-          reason = (await res.json()).error;
-        } catch {
-          // ignore
-        }
-      }
-      if (res.ok || reason === "no_session") {
-        localStorage.setItem("bible-study:sitePassword", candidate);
-        overlay.remove();
-        window.location.reload();
-      } else {
-        errorEl.classList.remove("hidden");
-        input.value = "";
-        input.focus();
-      }
-    } catch {
-      errorEl.classList.remove("hidden");
-    }
-  });
-
-  document.getElementById("lockScreenInput").focus();
-}
 
 // ---------- Google sign-in ----------
 
@@ -4747,13 +4676,15 @@ function showLoginScreen() {
   overlay.innerHTML = `
     <div class="modal lock-screen-modal">
       <img src="assets/anchor.svg" class="lock-screen-logo" alt="Anchor" />
-      <h2>Sign in</h2>
-      <p class="settings-section-hint">Your own private tags and notes, plus everything shared (Studies, Topics, Insights). Sign in with Google to continue.</p>
+      <h2>Sign in to save</h2>
+      <p class="settings-section-hint">Your own tags and notes need an account so they stay private to you. Browsing everything shared (Studies, Topics, Insights) doesn't require signing in.</p>
       <button type="button" id="googleSignInBtn" class="btn btn-accent-solid">Sign in with Google</button>
+      <button type="button" id="loginScreenDismissBtn" class="btn btn-outline">Not now</button>
     </div>
   `;
   document.body.appendChild(overlay);
   document.getElementById("googleSignInBtn").addEventListener("click", connectGoogle);
+  document.getElementById("loginScreenDismissBtn").addEventListener("click", () => overlay.remove());
 }
 
 init();

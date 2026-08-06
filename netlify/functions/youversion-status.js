@@ -1,5 +1,4 @@
 const { getStore, connectLambda } = require("@netlify/blobs");
-const { isAuthorized, unauthorizedResponse } = require("./_auth");
 const { getSessionUser } = require("./_session");
 
 function store() {
@@ -12,8 +11,6 @@ function keyFor(sub) {
 
 exports.handler = async (event) => {
   connectLambda(event);
-  if (!isAuthorized(event)) return unauthorizedResponse();
-
   const user = getSessionUser(event);
   if (!user) {
     return { statusCode: 401, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: "no_session" }) };

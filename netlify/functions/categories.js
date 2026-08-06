@@ -1,5 +1,4 @@
 const { getStore, connectLambda } = require("@netlify/blobs");
-const { isAuthorized, unauthorizedResponse } = require("./_auth");
 const { getSessionUser } = require("./_session");
 
 const KEY = "categories.json";
@@ -11,11 +10,10 @@ function store() {
 
 exports.handler = async (event) => {
   connectLambda(event);
-  if (!isAuthorized(event)) return unauthorizedResponse();
 
   if (event.httpMethod === "GET") {
-    // Studies is shared/read-only for everyone signed in — no owner check
-    // needed to view it, same treatment as Topics/Insights.
+    // Studies is shared/read-only, public like the rest of browsing — no
+    // owner check needed to view it, same treatment as Topics/Insights.
     try {
       const data = await store().get(KEY);
       return {

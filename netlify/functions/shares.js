@@ -5,7 +5,6 @@
 
 const { getStore, connectLambda } = require("@netlify/blobs");
 const crypto = require("crypto");
-const { isAuthorized, unauthorizedResponse } = require("./_auth");
 const { getSessionUser } = require("./_session");
 
 const KEY = "shares.json";
@@ -21,8 +20,6 @@ async function readShares() {
 
 exports.handler = async (event) => {
   connectLambda(event);
-  if (!isAuthorized(event)) return unauthorizedResponse();
-
   const user = getSessionUser(event);
   if (!user) {
     return { statusCode: 401, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: "no_session" }) };
