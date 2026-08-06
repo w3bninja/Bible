@@ -1335,7 +1335,11 @@ async function connectYouVersion() {
     response_type: "code",
     client_id: YOUVERSION_APP_KEY,
     redirect_uri: redirectUri,
-    scope: "openid profile email highlights notes bookmarks",
+    // highlights/notes/bookmarks were dropped from this list: that data
+    // lives behind a separate internal API (moments.youversionapi.com)
+    // this app's OAuth token isn't accepted by — see the connect flow's
+    // one purpose now, showing who's connected via the token's own claims.
+    scope: "openid profile email",
     state,
     nonce: randomPkceString(16),
     code_challenge: challenge,

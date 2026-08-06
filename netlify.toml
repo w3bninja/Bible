@@ -24,12 +24,6 @@
   force = true
 
 [[redirects]]
-  from = "/api/youversion/debug-moments"
-  to = "/.netlify/functions/youversion-debug-moments"
-  status = 200
-  force = true
-
-[[redirects]]
   from = "/api/shares"
   to = "/.netlify/functions/shares"
   status = 200
