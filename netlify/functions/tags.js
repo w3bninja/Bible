@@ -20,14 +20,17 @@ exports.handler = async (event) => {
   if (!isAuthorized(event)) return unauthorizedResponse();
 
   const user = getSessionUser(event);
-  if (!user) {
-    return { statusCode: 401, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: "no_session" }) };
-  }
-  const key = keyFor(user.sub);
 
   if (event.httpMethod === "GET") {
+    // Browsing (Studies/Topics/Insights, reading the Bible) doesn't require
+    // being signed in — only having your own tags/notes does. An anonymous
+    // request just gets an empty set rather than being turned away, so the
+    // app itself never forces a login screen just to look around.
+    if (!user) {
+      return { statusCode: 200, headers: { "Content-Type": "application/json; charset=utf-8" }, body: EMPTY };
+    }
     try {
-      const data = await store().get(key);
+      const data = await store().get(keyFor(user.sub));
       return {
         statusCode: 200,
         headers: { "Content-Type": "application/json; charset=utf-8" },
@@ -39,6 +42,10 @@ exports.handler = async (event) => {
   }
 
   if (event.httpMethod === "POST") {
+    if (!user) {
+      return { statusCode: 401, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: "no_session" }) };
+    }
+
     let parsed;
     try {
       parsed = JSON.parse(event.body);
@@ -47,7 +54,7 @@ exports.handler = async (event) => {
     }
 
     try {
-      await store().set(key, JSON.stringify(parsed));
+      await store().set(keyFor(user.sub), JSON.stringify(parsed));
       return {
         statusCode: 200,
         headers: { "Content-Type": "application/json; charset=utf-8" },

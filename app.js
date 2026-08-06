@@ -3751,7 +3751,13 @@ function populateShareTagSelect() {
 function renderAccountPanel() {
   const panel = el("accountPanel");
   if (!currentUser) {
-    panel.innerHTML = '<div class="empty-msg">Not signed in.</div>';
+    panel.innerHTML = '<div class="empty-msg">Not signed in — you can browse everything shared, but your own tags/notes need an account.</div>';
+    const signInBtn = document.createElement("button");
+    signInBtn.type = "button";
+    signInBtn.className = "btn btn-accent-solid btn-small";
+    signInBtn.textContent = "Sign in with Google";
+    signInBtn.addEventListener("click", connectGoogle);
+    panel.appendChild(signInBtn);
     return;
   }
   panel.innerHTML = `
