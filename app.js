@@ -4772,7 +4772,7 @@ function showLoginScreen() {
   overlay.className = "modal-overlay";
   overlay.innerHTML = `
     <div class="modal lock-screen-modal">
-      <img src="assets/anchor.svg" class="lock-screen-logo" alt="Anchor" />
+      <img src="assets/anchor-logo.svg" class="lock-screen-logo" alt="Anchor" />
       <h2>Sign in to save</h2>
       <p class="settings-section-hint">Your own tags and notes need an account so they stay private to you. Browsing everything shared (Studies, Topics, Insights) doesn't require signing in.</p>
       <button type="button" id="googleSignInBtn" class="btn btn-accent-solid">Sign in with Google</button>
