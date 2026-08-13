@@ -12,6 +12,12 @@
   force = true
 
 [[redirects]]
+  from = "/api/prefs"
+  to = "/.netlify/functions/prefs"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/youversion/token"
   to = "/.netlify/functions/youversion-token"
   status = 200

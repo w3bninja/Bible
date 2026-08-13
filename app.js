@@ -2,6 +2,7 @@
 let bible = null;
 let booksById = new Map();
 let tagsData = { tags: [], verseTags: {}, links: [] }; // tags: [{id,name,hue}], verseTags[key] = { tagIds:[], note:'' }, links: [{id, a:[keys], b:[keys], note}]
+let prefsData = {}; // { lastLocation, lastView, sidebarCollapsed, speechRate, speechVoiceURI } — synced per-user across devices when signed in
 let currentUser = null; // { sub, email, name, picture, role } once signed in, else null
 let categoriesData = { categories: [] }; // categories: [{id, name, description, tagIds:[], entries:[{id,key,note}]}]
 let currentStudyId = null; // for study detail view
@@ -32,6 +33,7 @@ let searchBookFilter = null; // null | bookId
 let saveTimer = null;
 let notesSaveTimer = null;
 let categoriesSaveTimer = null;
+let prefsSaveTimer = null;
 
 const HUE_PRESETS = [10, 40, 70, 145, 190, 250, 290, 330];
 
@@ -177,10 +179,11 @@ async function init() {
   loadCurrentUserFromStorage();
 
   try {
-    const [bibleData, tagsJson, categoriesJson] = await Promise.all([
+    const [bibleData, tagsJson, categoriesJson, prefsJson] = await Promise.all([
       fetchJSON("data/bible.json"),
       fetchJSON("/api/tags").catch(() => ({ tags: [], verseTags: {} })),
       fetchJSON("/api/categories").catch(() => ({ categories: [] })),
+      fetchJSON("/api/prefs").catch(() => ({})),
     ]);
     bible = bibleData;
     tagsData = tagsJson;
@@ -189,18 +192,42 @@ async function init() {
     if (!tagsData.links) tagsData.links = [];
     categoriesData = categoriesJson;
     if (!categoriesData.categories) categoriesData.categories = [];
+    prefsData = prefsJson && typeof prefsJson === "object" ? prefsJson : {};
 
     booksById = new Map(bible.books.map((b) => [b.id, b]));
 
     if (anySmartTagsDefined()) await loadAnyDefinedSmartTagSources();
 
-    const lastView = localStorage.getItem("bible-study:lastView");
+    // Signed-in users' synced prefs win over the device-local copy (matches
+    // this feature's last-write-wins design — no merge logic); anonymous or
+    // never-synced users just keep whatever was already on this device.
+    const lastView = prefsData.lastView || localStorage.getItem("bible-study:lastView");
 
-    const last = JSON.parse(localStorage.getItem("bible-study:lastLocation") || "null");
+    const last = prefsData.lastLocation || JSON.parse(localStorage.getItem("bible-study:lastLocation") || "null");
     if (last && booksById.has(last.bookId)) {
       selectBook(last.bookId, last.chapter || 1);
     } else {
       selectBook("genesis", 1);
+    }
+
+    // sidebarCollapsed/speechRate/speechVoiceURI are read synchronously at
+    // module load (before this async fetch resolves) so first paint isn't
+    // blocked — apply a synced value now if it differs, accepting a possible
+    // one-time visual correction right after load when switching devices.
+    if (typeof prefsData.sidebarCollapsed === "boolean") {
+      document.querySelector(".app-shell").classList.toggle("sidebar-collapsed", prefsData.sidebarCollapsed);
+      localStorage.setItem("bible-study:sidebarCollapsed", prefsData.sidebarCollapsed ? "1" : "0");
+    }
+    if (prefsData.speechRate) {
+      speechRate = Number(prefsData.speechRate);
+      localStorage.setItem("bible-study:speechRate", String(speechRate));
+      const rateSelect = el("audioRateSelect");
+      if (rateSelect) rateSelect.value = String(speechRate);
+    }
+    if (prefsData.speechVoiceURI) {
+      speechVoiceURI = prefsData.speechVoiceURI;
+      localStorage.setItem("bible-study:speechVoiceURI", speechVoiceURI);
+      if (speechSupported) populateVoiceSelect();
     }
 
     if (lastView === "dashboard") {
@@ -268,6 +295,8 @@ function showView(view) {
 
   if (["dashboard", "read", "tags", "studies", "insights", "settings"].includes(view)) {
     localStorage.setItem("bible-study:lastView", view);
+    prefsData.lastView = view;
+    schedulePrefsSave();
   }
 
   document.querySelectorAll(".nav-item").forEach((item) => {
@@ -322,6 +351,8 @@ el("backBtn").addEventListener("click", () => {
 el("collapseBtn").addEventListener("click", () => {
   const collapsed = document.querySelector(".app-shell").classList.toggle("sidebar-collapsed");
   localStorage.setItem("bible-study:sidebarCollapsed", collapsed ? "1" : "0");
+  prefsData.sidebarCollapsed = collapsed;
+  schedulePrefsSave();
 });
 
 function closeMobileNav() {
@@ -347,6 +378,8 @@ function selectBook(bookId, chapter) {
   renderReadView();
   showView("read");
   localStorage.setItem("bible-study:lastLocation", JSON.stringify({ bookId: currentBookId, chapter: currentChapter }));
+  prefsData.lastLocation = { bookId: currentBookId, chapter: currentChapter };
+  schedulePrefsSave();
 }
 
 function renderReadView() {
@@ -798,6 +831,8 @@ if (speechSupported) {
   el("audioRateSelect").addEventListener("change", (e) => {
     speechRate = Number(e.target.value);
     localStorage.setItem("bible-study:speechRate", String(speechRate));
+    prefsData.speechRate = speechRate;
+    schedulePrefsSave();
     // Rate changes only take effect on the next utterance in most engines,
     // so restart the current verse for an immediate, consistent result.
     if (speechPlaying) restartCurrentVerse();
@@ -806,6 +841,8 @@ if (speechSupported) {
   el("audioVoiceSelect").addEventListener("change", (e) => {
     speechVoiceURI = e.target.value;
     localStorage.setItem("bible-study:speechVoiceURI", speechVoiceURI);
+    prefsData.speechVoiceURI = speechVoiceURI;
+    schedulePrefsSave();
     if (speechPlaying) restartCurrentVerse();
   });
 }
@@ -4684,6 +4721,31 @@ async function saveTags() {
   }
 }
 
+function schedulePrefsSave() {
+  // Anonymous/local-dev has no session to sync to — the localStorage write
+  // at each call site already covers that case, so skip the doomed POST.
+  if (!currentUser) return;
+  clearTimeout(prefsSaveTimer);
+  prefsSaveTimer = setTimeout(savePrefs, 500);
+}
+
+async function savePrefs() {
+  try {
+    const res = await fetch("/api/prefs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sessionHeaders() },
+      body: JSON.stringify(prefsData),
+    });
+    if (res.status === 401) {
+      await handleAuthFailure();
+      return;
+    }
+    if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+  } catch (err) {
+    console.error(err);
+  }
+}
+
 // ---------- Site password lock screen ----------
 
 // ---------- Google sign-in ----------
@@ -4710,7 +4772,7 @@ function showLoginScreen() {
   overlay.className = "modal-overlay";
   overlay.innerHTML = `
     <div class="modal lock-screen-modal">
-      <img src="assets/anchor.svg" class="lock-screen-logo" alt="Anchor" />
+      <img src="assets/anchor-logo.svg" class="lock-screen-logo" alt="Anchor" />
       <h2>Sign in to save</h2>
       <p class="settings-section-hint">Your own tags and notes need an account so they stay private to you. Browsing everything shared (Studies, Topics, Insights) doesn't require signing in.</p>
       <button type="button" id="googleSignInBtn" class="btn btn-accent-solid">Sign in with Google</button>
