@@ -167,6 +167,52 @@ User feedback after using the Topics feature: auto-tags showing the same colored
 - `buildVerseSpan` (main reading view) reverted to manual tags only — auto-tags no longer render any inline highlighting there. `effectiveTagIdsForKey()` (the manual+smart merge helper) became dead code as a result and was removed; the Tags page's filter bar/verse list were simplified back to pure manual-tag logic too (dropped the "orphaned active pill" fallback for auto-tags, since auto-tags no longer route through the Tags page at all).
 - Clicking an auto-tag in "Your Auto-Tags" (Topics page) now opens a new dedicated **Topic Reading view** instead of landing on the Tags page's card list — consecutive verses grouped into passages and rendered with the main reading view's own typography and `buildVerseSpan` (so a verse the user *has* manually tagged still shows that — only the auto-tag itself is excluded from inline highlighting). Verse detail's smart-tag chips are unaffected (still shown there; it's an explicit detail view, not reading-flow clutter).
 
+## 4. Progressive Web App / Offline Support
+
+Add a web app manifest + service worker so the app installs to a home screen and the reading experience keeps working without a connection.
+
+**Effort: S/M**
+
+- No external dependency — the app is already a static site with all Bible text/topics/lexicon data as committed JSON files under `data/`, which is exactly what a service worker cache-first strategy wants.
+- New pieces: `manifest.json` (name, icons, theme color — none currently exist, confirmed via `find . -iname "manifest*"`), a service worker registered from `index.html` that precaches the app shell (`index.html`, `app.js`, `styles.css`) and the core `data/*.json` files, and an install-prompt affordance.
+- **Split by what can go offline vs. what can't**: reading, search, tagging (writes to `localStorage`... no — tags/notes are server-backed via `netlify/functions/tags.js`, so offline tagging needs a queue), and the Strong's/topics/persons datasets (already lazy-loaded, already static JSON, trivially cacheable) all work offline for *reading*. Anything that calls a Netlify Function (tag/note writes, Studies, sharing, YouVersion/Google auth) needs the network — either disable those affordances with an "offline" indicator, or queue writes and sync on reconnect (bigger scope, see below).
+- **Two tiers worth distinguishing**: (a) offline *reading* — cache the static data files, near-free, no write-conflict risk; (b) offline *writes* (tag/note edits queued while offline, flushed on reconnect) — real scope, needs conflict handling since `tags.js` currently does a full-blob read-modify-write with no version check. Recommend shipping (a) alone first.
+- Known limitation: the largest data files (`data/strongs-tokens.json` 15.6MB, `data/strongs-lexicon.json` 4.9MB, `data/strongs-concordance.json` 5.1MB, `data/topics.json` 2.77MB) total ~30MB — fine as lazy-loaded runtime cache entries (cached only once actually used, matching today's lazy-load behavior) but wrong to precache eagerly at install time on mobile data.
+
+**Dependencies:** none. Fully unblocked for tier (a); tier (b) benefits from having accounts/sync (#5, #6 below) settled first so there's a clear place to reconcile queued writes.
+
+---
+
+## 5. Cross-Device Reading Position Sync
+
+Today "last read verse" (`bible-study:lastLocation` in `localStorage`, `app.js:199,349`) and sidebar/speech preferences are device-local only — opening the app on a second device starts back at Genesis 1.
+
+**Effort: S** once accounts exist, **not sensibly buildable before then**
+
+- The blocking dependency is real, not just convenient sequencing: syncing "last read verse" server-side requires a concept of *whose* position it is. Today the app has no per-user identity at the data layer (see [accounts-scoping.md](accounts-scoping.md)) — only a shared site password. Building this first would mean inventing a throwaway single-blob sync mechanism that gets thrown away again once accounts land.
+- Once accounts ship: near-free addition, reuses the exact same per-user blob pattern accounts already introduces for tags/notes (`tags-<yvp_id>.json` per accounts-scoping.md) — e.g. a `prefs-<yvp_id>.json` blob (or a field within the user's existing tags blob) holding `{lastLocation, sidebarCollapsed, speechRate, speechVoiceURI}`, all fields that already exist as individual `localStorage` keys in `app.js` today and just need a write-through to the per-user blob alongside the existing `localStorage.setItem` calls.
+- Conflict handling is trivial here (unlike tag edits) — last-write-wins is the correct behavior for "where was I reading," no merge logic needed.
+
+**Dependencies:** [Multi-User Accounts](accounts-scoping.md) (specifically, per-user blob storage existing at all). Sequence *after* accounts, not before.
+
+---
+
+## 6. Export Studies / Tags / Notes
+
+Let a user export their tagged verses, notes, or a Study as a document — for printing, sharing outside the app, or backup.
+
+**Effort: S** for plain text/Markdown, **M** if PDF is required
+
+- No external data dependency — this reads existing in-app data (`tagsData.verseTags`/notes, `categoriesData` Studies) and existing `data/bible.json` verse text; nothing new to source.
+- **Markdown/plain-text export (S)**: a "Export" button on the Tags page (per-tag) and Studies page (per-Study) that walks the already-rendered verse list and serializes to a downloadable `.txt`/`.md` file client-side (`Blob` + `URL.createObjectURL`, no server round-trip, no new dependency) — same underlying verse-grouping logic the reading views already use.
+- **PDF export (M)**: same content, formatted — either `window.print()` with a dedicated print stylesheet (near-free, no library, but less control over pagination/branding) or a client-side PDF library (adds a real dependency to a currently zero-dependency frontend — worth avoiding unless print-to-PDF proves visibly ugly in practice). Recommend trying the print-stylesheet route first since it's free to attempt and may be good enough.
+- Natural pairing with `share.html` (existing share-view page) — that page already renders a single tag's verses for an unauthenticated viewer; the export feature can likely reuse its rendering logic rather than building a third verse-list renderer.
+- Open question: export a single tag/Study at a time (simpler, matches existing per-tag/per-Study UI surfaces), or a full "export everything" dump (more useful as a backup, but a new aggregate view with no existing UI analog).
+
+**Dependencies:** none. Fully unblocked — independent of accounts and can ship anytime.
+
+---
+
 ## Effort summary
 
 | Feature | Effort | Blocked on |
@@ -177,6 +223,10 @@ User feedback after using the Topics feature: auto-tags showing the same colored
 | 3B1. Topic smart folders (Nave's) | **Done** | Shipped 2026-07-29 |
 | 3B2. Named-entity smart tags (people) | **Done** | Shipped 2026-07-29 |
 | 3C. AI semantic tagging | **XL** | Infra/provider decision, not data |
+| 4. PWA / Offline Support (reading tier) | **S/M** | Nothing — unblocked |
+| 4b. PWA offline writes (queued sync) | **L** | Benefits from accounts (#5/#6 sync pattern) |
+| 5. Cross-Device Reading Position Sync | **S** | [Multi-User Accounts](accounts-scoping.md) |
+| 6. Export Studies/Tags/Notes | **S–M** | Nothing — unblocked |
 
 ## Suggested sequencing
 
@@ -187,3 +237,8 @@ User feedback after using the Topics feature: auto-tags showing the same colored
 5. **Feature 2, Phases 2-3** — word-tap interaction + bottom sheet UI, once Phase 1 data exists.
 6. **Feature 3B1** — independent data source, can run in parallel with any of the above.
 7. **Features 3B2 / 3C** — revisit after the above; each needs its own scoping spike before a real effort estimate is possible.
+8. **Feature 6 (Export)** — cheap, independent, no reason to wait; good filler between larger efforts.
+9. **Feature 4 (PWA, reading tier)** — cheap, independent; do once the data-file footprint (Strong's/topics files) has stabilized so the cache list doesn't need immediate rework.
+10. **Multi-User Accounts** ([accounts-scoping.md](accounts-scoping.md)) — the big architectural item; once it ships, unblocks:
+11. **Feature 5 (Reading position sync)** — near-free follow-on to accounts.
+12. **Feature 4b (PWA offline writes)** — revisit once accounts establish the per-user write/sync pattern to reuse for conflict resolution.
