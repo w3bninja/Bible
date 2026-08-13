@@ -79,11 +79,11 @@ textarea, input {
 
 .sidebar-title .title-full { display: inline-flex; align-items: center; }
 
-.logo-full { height: 24px; width: auto; display: block; }
+.logo-full { height: 44px; width: auto; display: block; }
 .logo-mark { height: 22px; width: auto; flex-shrink: 0; }
 
 .sidebar-title .title-mark { display: none; }
-.sidebar-title .title-mark .logo-mark { height: 26px; width: auto; }
+.sidebar-title .title-mark .logo-mark { height: 38px; width: auto; }
 
 .app-shell.sidebar-collapsed .sidebar-title {
   padding: 4px 0 20px;
