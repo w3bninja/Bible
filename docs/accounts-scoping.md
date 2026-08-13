@@ -1,31 +1,29 @@
 # Feature Scoping: Multi-User Accounts
 
-Status: scoping only, nothing implemented yet. Not scheduled — captured here so the design decisions already made aren't lost before this gets picked up.
+Status: **Implemented** (shipped across commits `ec29c74`, `fbd715e`, `c9fd4dc`, 2026-08). Kept here as the historical record of the design decisions, since most of them shipped as originally scoped — only the login provider changed from the original plan.
 
 ## Decisions made so far
 
 1. **Two-tier permission model**, not full multi-tenancy:
-   - **Shared, owner-editable, everyone-viewable**: Topics, Studies, Insights (heatmap/tag graph/cross-ref graphs/timeline/map), cross-reference data. Topics/cross-refs/timeline/map are already read-only imported data, so no change needed there. Studies is the one that changes — it's currently open to anyone with the site password to create/edit/delete; that becomes owner-only, with everyone else browsing read-only (same treatment Topics already gets).
-   - **Private per-user, fully editable by that user only**: tags + notes on verses (today's `data/tags.json` — `{tags, verseTags, links}`). Not visible to other users at all, not just non-editable.
+   - **Shared, owner-editable, everyone-viewable**: Topics, Studies, Insights (heatmap/tag graph/cross-ref graphs/timeline/map), cross-reference data. Topics/cross-refs/timeline/map are already read-only imported data, so no change needed there. Studies is the one that changes — it's currently open to anyone with the site password to create/edit/delete; that becomes owner-only, with everyone else browsing read-only (same treatment Topics already gets). **Shipped**: `categories.js` GET is public/no-auth, POST requires `role === "owner"` (403 `owner_only` otherwise).
+   - **Private per-user, fully editable by that user only**: tags + notes on verses (today's `data/tags.json` — `{tags, verseTags, links}`). Not visible to other users at all, not just non-editable. **Shipped**: one blob per user, `tags-<sub>.json`.
 
-2. **Login via "Sign in with YouVersion"** — reuses the PKCE OAuth flow already built and working (see `youversion-callback.html`, `netlify/functions/youversion-token.js`). No passwords to store, hash, or build reset flows for. The account's permanent ID is the `yvp_id` claim decoded from the JWT access token (confirmed present via the debug probe done this session — `yvp_id`, `email`, `name`, `profile_picture` are all in the token claims already, no extra API call needed).
+2. ~~**Login via "Sign in with YouVersion"**~~ — **superseded.** The shipped implementation uses **Google OAuth** (real "confidential client" auth-code flow) instead: `app.js`'s `connectGoogle()` redirects to Google's authorize endpoint, `netlify/functions/google-callback.js` exchanges the code server-side and mints a session. The account's permanent ID is the Google **`sub`** claim, not `yvp_id`. YouVersion remains in the app, but purely as an optional per-account integration reachable from Settings — unrelated to login, unchanged from before accounts existed except that its token storage is now per-user too (see below).
 
-## Why this is bigger than a normal feature
+## What shipped, and where
 
-This touches the app's core data model and auth, not just a new screen:
+- **Auth**: `netlify/functions/_auth.js` (the old shared `SITE_PASSWORD` check) was deleted outright — the site password gate is fully removed, the app is publicly browsable. In its place, `netlify/functions/_session.js` issues stateless, HMAC-signed session tokens (`SESSION_SECRET` env var), payload `{ sub, email, name, picture, role, iat, exp }`, 30-day TTL. Not a cookie — stored in `localStorage` (`bible-study:sessionToken`) and sent as an `X-Session-Token` header. Every data-backed function (`tags.js`, `categories.js`, `shares.js`, `share-view.js`, `youversion-token.js`, `youversion-status.js`) was revisited to check this session.
+- **Tags/notes per-user**: `tags.js` keys blobs `tags-<sub>.json`. GET with no session returns an empty stub (browsing never errors); POST requires a session and can only ever write to the caller's own key, since it's derived server-side from the verified `sub` — never client-supplied.
+- **Studies owner write gate**: `categories.js` stays one shared `categories.json` blob; POST checks `getSessionUser(event)?.role === "owner"`.
+- **Frontend**: `app.js` has a module-level `currentUser` singleton (`{ sub, email, name, picture, role, exp }` or `null`) populated from the stored session token, and an `isOwner()` helper used throughout to gate owner-only UI (a `.owner-only` CSS class toggle, plus tag-chip edit affordances). No blocking login screen — browsing is public; a reactive "Sign in to save" modal appears only when an authenticated write 401s. A persistent sign-in button/avatar lives in the sidebar and in Settings.
+- **Legacy data migration**: `tags.js` has a one-time fallback that copies the old shared `tags.json` content into the owner's new `tags-<sub>.json` key, gated on `role === "owner"` and only when the owner's per-user blob is still empty — so it fires exactly once and never clobbers real per-user data.
 
-- **Auth**: replaces `netlify/functions/_auth.js`'s single shared `SITE_PASSWORD` check with real session-based auth (signed cookie or JWT identifying the user + role) applied per-endpoint, with a read/write and owner/any-user permission distinction. Every existing Netlify function (`tags.js`, `categories.js`, `shares.js`, `share-view.js`) needs its auth check revisited.
-- **Data model — tags/notes must become per-user**: `data/tags.json` is currently one global blob. Cleanest approach is one blob per user (e.g. `tags-<yvp_id>.json`) rather than one giant blob keyed internally by user, since Netlify Blobs is a plain key-value store and per-user keys avoid read/write contention as user count grows.
-- **Data model — Studies stays shared but gets a write gate**: `data/categories.json` (`categories.js` function) stays one blob, but the POST handler needs an owner check added.
-- **Frontend**: needs a real login screen (replacing the current site-password lock screen), a "current user" concept threaded through `app.js` state (today `tagsData`/`categoriesData` are module-level singletons with no user dimension at all), and UI changes to hide edit affordances (New Study, Edit, Delete on Studies) for non-owner users.
-- **Existing single-tenant data needs a migration path**: today's `tags.json`/`categories.json` content (the owner's own data, accumulated all session) needs to end up attributed to the owner account once accounts exist, not orphaned or wiped.
+## Open questions — status
 
-## Open questions for whenever this gets picked up
+- **Personal Studies for non-owner users**: **not built.** Study-creation remains strictly owner-only; regular users are limited to tags/notes. Matches the original "leaning toward no personal Studies in v1."
+- **How the owner account is established**: resolved as **manual env var** (`OWNER_GOOGLE_EMAIL` in Netlify) — whoever signs in with that email becomes owner. Not "first person to sign in."
+- **Do shared links stay tied to one user's tags, or can any user's tags be shared?**: resolved as **any signed-in user's tags can be shared** — `shares.js` requires a session, scopes GET/DELETE to `ownerId === user.sub`, and `share-view.js` resolves a share's `ownerId` to fetch that specific user's `tags-<ownerId>.json`. Shares created before accounts existed (no `ownerId`) are orphaned — `share-view.js` returns 404 for those rather than guessing an owner.
 
-- Does a signed-in non-owner user get their own **private Studies** too (a personal notebook, separate from the shared owner-curated ones), or is Study-creation strictly owner-only with regular users limited to tags/notes? (Leaning toward "no personal Studies in v1" based on the conversation, but not explicitly settled.)
-- How is the owner account itself established — first person to sign in becomes owner automatically, or a manually-set `yvp_id` in an env var/config?
-- Do shared links (`shares.js`) stay tied to the owner's tags only, or can any user's tags be shared? (Given tags become private per-user, this probably still works as-is — a share token already points at one specific tag by ID — but worth re-checking once tags are namespaced per user.)
+## Setup
 
-## Rough effort
-
-**L/XL** — no unresolved external dependency (YouVersion OAuth already works, JWT claims already confirmed), but it's a real architectural change touching auth, every data-backed Netlify function, and core frontend state — not a bolt-on feature.
+See [accounts-setup.md](accounts-setup.md) for the one-time Google OAuth credential setup needed to make this work in a live deployment.

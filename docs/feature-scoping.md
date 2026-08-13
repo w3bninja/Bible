@@ -187,13 +187,13 @@ Add a web app manifest + service worker so the app installs to a home screen and
 
 Today "last read verse" (`bible-study:lastLocation` in `localStorage`, `app.js:199,349`) and sidebar/speech preferences are device-local only — opening the app on a second device starts back at Genesis 1.
 
-**Effort: S** once accounts exist, **not sensibly buildable before then**
+**Effort: S** — **unblocked as of 2026-08**, [Multi-User Accounts](accounts-scoping.md) shipped
 
-- The blocking dependency is real, not just convenient sequencing: syncing "last read verse" server-side requires a concept of *whose* position it is. Today the app has no per-user identity at the data layer (see [accounts-scoping.md](accounts-scoping.md)) — only a shared site password. Building this first would mean inventing a throwaway single-blob sync mechanism that gets thrown away again once accounts land.
-- Once accounts ship: near-free addition, reuses the exact same per-user blob pattern accounts already introduces for tags/notes (`tags-<yvp_id>.json` per accounts-scoping.md) — e.g. a `prefs-<yvp_id>.json` blob (or a field within the user's existing tags blob) holding `{lastLocation, sidebarCollapsed, speechRate, speechVoiceURI}`, all fields that already exist as individual `localStorage` keys in `app.js` today and just need a write-through to the per-user blob alongside the existing `localStorage.setItem` calls.
+- Originally scoped as blocked on accounts existing at all — that's now resolved. Per-user identity (Google `sub`) and per-user blob storage (`tags-<sub>.json`) both exist today.
+- Near-free addition: reuses the exact same per-user blob pattern tags/notes already use — e.g. a `prefs-<sub>.json` blob (or a field within the user's existing tags blob) holding `{lastLocation, sidebarCollapsed, speechRate, speechVoiceURI}`, all fields that already exist as individual `localStorage` keys in `app.js` today (`app.js:199,349` for `lastLocation`) and just need a write-through to the per-user blob alongside the existing `localStorage.setItem` calls, gated behind a session check the same way `tags.js` does.
 - Conflict handling is trivial here (unlike tag edits) — last-write-wins is the correct behavior for "where was I reading," no merge logic needed.
 
-**Dependencies:** [Multi-User Accounts](accounts-scoping.md) (specifically, per-user blob storage existing at all). Sequence *after* accounts, not before.
+**Dependencies:** none remaining.
 
 ---
 
@@ -225,7 +225,7 @@ Let a user export their tagged verses, notes, or a Study as a document — for p
 | 3C. AI semantic tagging | **XL** | Infra/provider decision, not data |
 | 4. PWA / Offline Support (reading tier) | **S/M** | Nothing — unblocked |
 | 4b. PWA offline writes (queued sync) | **L** | Benefits from accounts (#5/#6 sync pattern) |
-| 5. Cross-Device Reading Position Sync | **S** | [Multi-User Accounts](accounts-scoping.md) |
+| 5. Cross-Device Reading Position Sync | **S** | ~~Multi-User Accounts~~ **Shipped 2026-08 — unblocked** |
 | 6. Export Studies/Tags/Notes | **S–M** | Nothing — unblocked |
 
 ## Suggested sequencing
@@ -239,6 +239,6 @@ Let a user export their tagged verses, notes, or a Study as a document — for p
 7. **Features 3B2 / 3C** — revisit after the above; each needs its own scoping spike before a real effort estimate is possible.
 8. **Feature 6 (Export)** — cheap, independent, no reason to wait; good filler between larger efforts.
 9. **Feature 4 (PWA, reading tier)** — cheap, independent; do once the data-file footprint (Strong's/topics files) has stabilized so the cache list doesn't need immediate rework.
-10. **Multi-User Accounts** ([accounts-scoping.md](accounts-scoping.md)) — the big architectural item; once it ships, unblocks:
-11. **Feature 5 (Reading position sync)** — near-free follow-on to accounts.
-12. **Feature 4b (PWA offline writes)** — revisit once accounts establish the per-user write/sync pattern to reuse for conflict resolution.
+10. ~~**Multi-User Accounts**~~ ([accounts-scoping.md](accounts-scoping.md)) — done, shipped 2026-08.
+11. **Feature 5 (Reading position sync)** — near-free follow-on to accounts, now unblocked.
+12. **Feature 4b (PWA offline writes)** — reuse accounts' per-user write pattern for conflict resolution.
