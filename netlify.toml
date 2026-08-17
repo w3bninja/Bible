@@ -52,3 +52,9 @@
   to = "/.netlify/functions/google-callback"
   status = 200
   force = true
+
+[[redirects]]
+  from = "/api/admin/stats"
+  to = "/.netlify/functions/admin-stats"
+  status = 200
+  force = true
