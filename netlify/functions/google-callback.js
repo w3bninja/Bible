@@ -5,7 +5,9 @@
 // straight here with ?code=..., we exchange it, mint a session, and bounce
 // back to the app with the session token in the URL.
 
+const { connectLambda } = require("@netlify/blobs");
 const { issueSession } = require("./_session");
+const { recordSignupIfNew } = require("./_users");
 
 // Public value, not a secret — same one hardcoded in app.js for the
 // authorize-redirect step. Both sides of the exchange need it; only
@@ -33,6 +35,8 @@ function redirectWithError(reason, detail) {
 }
 
 exports.handler = async (event) => {
+  connectLambda(event);
+
   const code = event.queryStringParameters && event.queryStringParameters.code;
   const error = event.queryStringParameters && event.queryStringParameters.error;
   if (error) return redirectWithError(error);
@@ -61,6 +65,8 @@ exports.handler = async (event) => {
 
     const ownerEmail = (process.env.OWNER_GOOGLE_EMAIL || "").toLowerCase();
     const role = claims.email && claims.email.toLowerCase() === ownerEmail ? "owner" : "user";
+
+    await recordSignupIfNew(claims.sub, claims.email);
 
     const sessionToken = issueSession({
       sub: claims.sub,

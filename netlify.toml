@@ -53,6 +53,18 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/api/admin/stats"
+  to = "/.netlify/functions/admin-stats"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/admin/users"
+  to = "/.netlify/functions/admin-users"
+  status = 200
+  force = true
+
 # TEMPORARY — remove along with youversion-debug-token.js after the
 # highlights-permission test is done.
 [[redirects]]
