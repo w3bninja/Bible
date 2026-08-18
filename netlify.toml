@@ -30,6 +30,12 @@
   force = true
 
 [[redirects]]
+  from = "/api/youversion/highlights"
+  to = "/.netlify/functions/youversion-highlights"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/shares"
   to = "/.netlify/functions/shares"
   status = 200
