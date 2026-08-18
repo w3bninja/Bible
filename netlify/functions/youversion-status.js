@@ -1,13 +1,6 @@
-const { getStore, connectLambda } = require("@netlify/blobs");
+const { connectLambda } = require("@netlify/blobs");
 const { getSessionUser } = require("./_session");
-
-function store() {
-  return getStore("bible-study");
-}
-
-function keyFor(sub) {
-  return `youversion-tokens-${sub}.json`;
-}
+const { store, keyFor } = require("./_youversion-tokens");
 
 exports.handler = async (event) => {
   connectLambda(event);

@@ -1,20 +1,11 @@
-const { getStore, connectLambda } = require("@netlify/blobs");
+const { connectLambda } = require("@netlify/blobs");
 const { getSessionUser } = require("./_session");
+const { store, keyFor } = require("./_youversion-tokens");
 
 // Public OAuth client_id — not a secret, safe to live in source. This is a
 // PKCE (public client) flow, so no client secret exists anywhere.
 const YOUVERSION_APP_KEY = "Z8ou4eKH1jLzXHa8QOvlNnCgLQmXRtY2tyIfBg31o8omy0IO";
 const TOKEN_ENDPOINT = "https://api.youversion.com/auth/token";
-
-function store() {
-  return getStore("bible-study");
-}
-
-// Each logged-in account connects its own YouVersion account independently
-// — was a single global blob back when this app assumed only one user.
-function keyFor(sub) {
-  return `youversion-tokens-${sub}.json`;
-}
 
 exports.handler = async (event) => {
   connectLambda(event);
