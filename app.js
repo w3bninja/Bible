@@ -1474,8 +1474,8 @@ async function connectYouVersion() {
     redirect_uri: redirectUri,
     // Highlights isn't an OAuth scope — it's a separate opt-in permission,
     // requested via requested_permissions[] per developers.youversion.com/sign-in-apis.
-    // TEMPORARY: testing whether a granted highlights permission actually
-    // works against /v1/highlights. See app.js history for prior scope-only note.
+    // Confirmed working: with this granted, GET /v1/highlights returns real
+    // per-verse highlight data (bible_id, passage_id, color).
     scope: "openid profile email",
     state,
     nonce: randomPkceString(16),
