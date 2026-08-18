@@ -52,3 +52,11 @@
   to = "/.netlify/functions/google-callback"
   status = 200
   force = true
+
+# TEMPORARY — remove along with youversion-debug-token.js after the
+# highlights-permission test is done.
+[[redirects]]
+  from = "/api/youversion/debug-token"
+  to = "/.netlify/functions/youversion-debug-token"
+  status = 200
+  force = true
