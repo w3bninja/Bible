@@ -449,8 +449,10 @@ textarea, input {
 
 .verse-inline:hover { background: rgba(0, 0, 0, 0.045); }
 
+.verse-inline.yv-highlighted { background: var(--yv-highlight-bg); }
 .verse-inline.has-note { background: oklch(0.96 0.04 95); }
 .verse-inline.tagged { background: var(--tag-dot-bg, oklch(0.96 0.04 95)); }
+.verse-inline.yv-highlighted:hover,
 .verse-inline.has-note:hover,
 .verse-inline.tagged:hover { filter: brightness(0.97); }
 

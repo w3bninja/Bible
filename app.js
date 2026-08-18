@@ -10,6 +10,8 @@ let editingStudyId = null; // set when the New Study modal is in edit mode
 
 let currentBookId = null;
 let currentChapter = 1;
+let currentChapterHighlights = {}; // verseNum -> hex color, for the currently displayed chapter's YouVersion highlights
+let youversionHighlightsCache = {}; // "{bookId}-{chapter}" -> same shape, so revisiting a chapter doesn't refetch
 let currentView = "read"; // 'read' | 'verse' | 'tags' | 'search'
 let currentVerseKey = null; // for verse detail view
 let activeTagFilter = null; // null = "All"
@@ -379,11 +381,14 @@ function selectBook(bookId, chapter) {
   stopReading();
   currentBookId = bookId;
   currentChapter = chapter || 1;
+  const highlightsCacheKey = `${currentBookId}-${currentChapter}`;
+  currentChapterHighlights = youversionHighlightsCache[highlightsCacheKey] || {};
   renderReadView();
   showView("read");
   localStorage.setItem("bible-study:lastLocation", JSON.stringify({ bookId: currentBookId, chapter: currentChapter }));
   prefsData.lastLocation = { bookId: currentBookId, chapter: currentChapter };
   schedulePrefsSave();
+  if (!youversionHighlightsCache[highlightsCacheKey]) loadYouVersionHighlights(currentBookId, currentChapter);
 }
 
 function renderReadView() {
@@ -437,6 +442,12 @@ function buildVerseSpan(key, text, showNum, verseNum) {
   span.className = "verse-inline";
   span.dataset.key = key;
   if (selection.has(key)) span.classList.add("selected");
+
+  const yvColor = currentChapterHighlights[verseNum];
+  if (yvColor) {
+    span.classList.add("yv-highlighted");
+    span.style.setProperty("--yv-highlight-bg", `#${yvColor}`);
+  }
 
   const entry = tagsData.verseTags[key];
   const tagIds = (entry && entry.tagIds) || [];
@@ -1443,6 +1454,61 @@ function renderTagsView() {
 const YOUVERSION_APP_KEY = "Z8ou4eKH1jLzXHa8QOvlNnCgLQmXRtY2tyIfBg31o8omy0IO";
 const YOUVERSION_AUTHORIZE_ENDPOINT = "https://api.youversion.com/auth/authorize";
 
+// This app's own text is the KJV (see .claude/convert-bible.ps1), matching
+// YouVersion bible_id 1 — confirmed via developers.youversion.com and
+// manual testing. Maps this app's book ids (data/bible.json, e.g.
+// "1corinthians") to the USFM codes YouVersion's highlights API expects.
+const BOOK_USFM = {
+  genesis: "GEN", exodus: "EXO", leviticus: "LEV", numbers: "NUM", deuteronomy: "DEU",
+  joshua: "JOS", judges: "JDG", ruth: "RUT", "1samuel": "1SA", "2samuel": "2SA",
+  "1kings": "1KI", "2kings": "2KI", "1chronicles": "1CH", "2chronicles": "2CH",
+  ezra: "EZR", nehemiah: "NEH", esther: "EST", job: "JOB", psalms: "PSA",
+  proverbs: "PRO", ecclesiastes: "ECC", songofsolomon: "SNG", isaiah: "ISA",
+  jeremiah: "JER", lamentations: "LAM", ezekiel: "EZK", daniel: "DAN", hosea: "HOS",
+  joel: "JOL", amos: "AMO", obadiah: "OBA", jonah: "JON", micah: "MIC", nahum: "NAM",
+  habakkuk: "HAB", zephaniah: "ZEP", haggai: "HAG", zechariah: "ZEC", malachi: "MAL",
+  matthew: "MAT", mark: "MRK", luke: "LUK", john: "JHN", acts: "ACT", romans: "ROM",
+  "1corinthians": "1CO", "2corinthians": "2CO", galatians: "GAL", ephesians: "EPH",
+  philippians: "PHP", colossians: "COL", "1thessalonians": "1TH", "2thessalonians": "2TH",
+  "1timothy": "1TI", "2timothy": "2TI", titus: "TIT", philemon: "PHM", hebrews: "HEB",
+  james: "JAS", "1peter": "1PE", "2peter": "2PE", "1john": "1JN", "2john": "2JN",
+  "3john": "3JN", jude: "JUD", revelation: "REV",
+};
+const YOUVERSION_KJV_BIBLE_ID = "1";
+
+// Fetches YouVersion highlights for one chapter and, if the user hasn't
+// navigated elsewhere in the meantime, applies them by re-rendering. Silently
+// does nothing for anonymous users, chapters we can't map to USFM, or when
+// the account isn't connected (backend returns 409) — highlights are a
+// bonus layer, not something worth surfacing errors for.
+async function loadYouVersionHighlights(bookId, chapter) {
+  if (!currentUser) return;
+  const usfm = BOOK_USFM[bookId];
+  if (!usfm) return;
+  const cacheKey = `${bookId}-${chapter}`;
+
+  try {
+    const params = new URLSearchParams({ bible_id: YOUVERSION_KJV_BIBLE_ID, passage_id: `${usfm}.${chapter}` });
+    const res = await fetch(`/api/youversion/highlights?${params}`, { headers: sessionHeaders() });
+    if (!res.ok) return;
+    const json = await res.json();
+
+    const map = {};
+    for (const h of json.data || []) {
+      const verseNum = Number(String(h.passage_id).split(".")[2]);
+      if (verseNum) map[verseNum] = h.color;
+    }
+    youversionHighlightsCache[cacheKey] = map;
+
+    if (currentBookId === bookId && currentChapter === chapter) {
+      currentChapterHighlights = map;
+      renderVerses();
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
 function base64UrlEncode(buffer) {
   let binary = "";
   new Uint8Array(buffer).forEach((b) => (binary += String.fromCharCode(b)));
@@ -1519,6 +1585,9 @@ el("youversionDisconnectBtn").addEventListener("click", async () => {
   } catch (err) {
     console.error(err);
   }
+  youversionHighlightsCache = {};
+  currentChapterHighlights = {};
+  if (currentView === "read") renderVerses();
   refreshYouVersionStatus();
 });
 
