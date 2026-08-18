@@ -144,6 +144,7 @@ function renderSidebarAccountArea() {
   `;
   btn.addEventListener("click", () => {
     renderSharesSection();
+    refreshYouVersionStatus();
     showView("settings");
   });
   area.appendChild(btn);
@@ -245,13 +246,15 @@ async function init() {
       showView("insights");
     } else if (lastView === "settings") {
       renderSharesSection();
+      refreshYouVersionStatus();
       showView("settings");
     }
 
     if (new URLSearchParams(window.location.search).get("yvConnect")) {
       handleYouVersionRedirectParam();
-      renderTagsView();
-      showView("tags");
+      renderSharesSection();
+      refreshYouVersionStatus();
+      showView("settings");
     }
   } catch (err) {
     console.error(err);
@@ -331,6 +334,7 @@ document.querySelectorAll(".nav-item").forEach((item) => {
       showView("insights");
     } else if (item.dataset.view === "settings") {
       renderSharesSection();
+      refreshYouVersionStatus();
       showView("settings");
     }
   });
