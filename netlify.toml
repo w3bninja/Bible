@@ -70,3 +70,9 @@
   to = "/.netlify/functions/admin-users"
   status = 200
   force = true
+
+[[redirects]]
+  from = "/api/admin/users/*"
+  to = "/.netlify/functions/admin-users?id=:splat"
+  status = 200
+  force = true

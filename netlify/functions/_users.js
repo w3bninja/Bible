@@ -37,4 +37,31 @@ async function listSignups() {
   return entries.filter(Boolean);
 }
 
-module.exports = { recordSignupIfNew, listSignups };
+// Admin-initiated delete, from the app-manager dashboard — no self-serve deletion exists in
+// this app yet (see PLAN.md). Removes every per-user blob we know about: the signup record
+// itself, tags, prefs, YouVersion tokens, and any share links they own. categories.js is
+// deliberately excluded — categories aren't per-user.
+async function deleteAccount(sub) {
+  const s = store();
+  await Promise.all([
+    s.delete(keyFor(sub)),
+    s.delete(`tags-${sub}.json`),
+    s.delete(`prefs-${sub}.json`),
+    s.delete(`youversion-tokens-${sub}.json`),
+  ]);
+
+  const sharesRaw = await s.get("shares.json");
+  if (sharesRaw) {
+    const shares = JSON.parse(sharesRaw);
+    let changed = false;
+    for (const [token, share] of Object.entries(shares)) {
+      if (share.ownerId === sub) {
+        delete shares[token];
+        changed = true;
+      }
+    }
+    if (changed) await s.set("shares.json", JSON.stringify(shares));
+  }
+}
+
+module.exports = { recordSignupIfNew, listSignups, deleteAccount };
