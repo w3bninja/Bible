@@ -33,16 +33,25 @@ exports.handler = async (event) => {
     return { statusCode: 401, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: "Unauthorized" }) };
   }
 
-  const signups = await listSignups();
+  try {
+    const signups = await listSignups();
 
-  return {
-    statusCode: 200,
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-    body: JSON.stringify({
-      signups: countsByDay(signups.map((s) => s.createdAt)),
-      // No account-deletion flow exists in this app yet — always empty until one is built.
-      deletions: [],
-      activeUsers: signups.length,
-    }),
-  };
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        signups: countsByDay(signups.map((s) => s.createdAt)),
+        // No account-deletion flow exists in this app yet — always empty until one is built.
+        deletions: [],
+        activeUsers: signups.length,
+      }),
+    };
+  } catch (err) {
+    console.error("admin-stats failed:", err);
+    return {
+      statusCode: 500,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
+    };
+  }
 };
