@@ -1468,16 +1468,17 @@ async function connectYouVersion() {
     response_type: "code",
     client_id: YOUVERSION_APP_KEY,
     redirect_uri: redirectUri,
-    // highlights/notes/bookmarks were dropped from this list: that data
-    // lives behind a separate internal API (moments.youversionapi.com)
-    // this app's OAuth token isn't accepted by — see the connect flow's
-    // one purpose now, showing who's connected via the token's own claims.
+    // Highlights isn't an OAuth scope — it's a separate opt-in permission,
+    // requested via requested_permissions[] per developers.youversion.com/sign-in-apis.
+    // TEMPORARY: testing whether a granted highlights permission actually
+    // works against /v1/highlights. See app.js history for prior scope-only note.
     scope: "openid profile email",
     state,
     nonce: randomPkceString(16),
     code_challenge: challenge,
     code_challenge_method: "S256",
   });
+  params.append("requested_permissions[]", "highlights");
   window.location.href = `${YOUVERSION_AUTHORIZE_ENDPOINT}?${params}`;
 }
 
