@@ -167,6 +167,48 @@ User feedback after using the Topics feature: auto-tags showing the same colored
 - `buildVerseSpan` (main reading view) reverted to manual tags only — auto-tags no longer render any inline highlighting there. `effectiveTagIdsForKey()` (the manual+smart merge helper) became dead code as a result and was removed; the Tags page's filter bar/verse list were simplified back to pure manual-tag logic too (dropped the "orphaned active pill" fallback for auto-tags, since auto-tags no longer route through the Tags page at all).
 - Clicking an auto-tag in "Your Auto-Tags" (Topics page) now opens a new dedicated **Topic Reading view** instead of landing on the Tags page's card list — consecutive verses grouped into passages and rendered with the main reading view's own typography and `buildVerseSpan` (so a verse the user *has* manually tagged still shows that — only the auto-tag itself is excluded from inline highlighting). Verse detail's smart-tag chips are unaffected (still shown there; it's an explicit detail view, not reading-flow clutter).
 
+## 4. Prophecy & Covenant Maps (scoped 2026-08-31, not started)
+
+Two browsable maps: the Old Testament promises answered in Christ, and the covenants — what each meant, what it did, and whether it is fulfilled in him. Both rendered as connection graphs with the verses one tap away.
+
+**Effort: M**
+
+### Data
+
+No external dataset carries this lens. Classic cross-reference sets link by verbal similarity and Nave's groups by topic; neither encodes "this promise is answered there", and the fulfilment claim is exactly the judgment being made. So the corpus is hand-authored: a new `data/fulfillment.json`, committed like `tags.json`, holding roughly forty-six prophecy pairings across five themes (birth and lineage, ministry, betrayal and trial, the cross, resurrection and exaltation) and seven covenants (Creation, Noahic, Abrahamic, Mosaic, Priestly, Davidic, New).
+
+References are authored as plain strings — `"Isaiah 53:4-6"` — rather than pre-resolved verse keys, because `parseBulkReferences` (`app.js`, the bulk-import parser) already turns exactly that form into `bookId-chapter-verse` keys, handles ranges and comma continuation, and reports what it could not resolve. Authoring in the human form and resolving on load means the dataset stays readable in a diff and gets reference-checked for free.
+
+Two fields are load-bearing and should not be flattened into prose:
+
+- **How direct each pairing is** — quoted outright, alluded to, or read typologically. Micah 5:2 and Hosea 11:1 are not the same kind of claim, and a map that renders them identically is overstating one of them.
+- **Whether a covenant is finished.** The Noahic is still in force rather than superseded, so this cannot be a presentational detail.
+
+### Reuse
+
+Most of this already exists:
+
+- `parseBulkReferences` — reference resolution, as above.
+- `goToVerseInChapter(keys)` — selects and scrolls to a verse; makes every node and reference on the map tappable straight into the reading view.
+- `booksById`, `parseVerseKey`, `verseKey`, `refLabel` — the shared verse-key helpers.
+- `renderTagGraph` / `renderRefGraph` (Insights) — the house pattern for hand-rolled SVG node-link diagrams: fixed layout, no simulation, no dependency, `<title>` elements for tooltips, click-through to the reading view. The new graphs follow it rather than inventing a second approach.
+
+### New pieces
+
+- **A bipartite layout** — promises in a left column, fulfilments in a right, curved links between. The existing graphs use a fixed circle, which is right for co-occurrence but wrong here: the relation is directed and two-sided, and a circle hides that.
+- **A vertical spine** for the covenants, one continuous line from Eden to the New Covenant. A table would present sequential stages as though they were alternatives.
+- A new view with theme/category filter chips, reusing the filter-chip pattern from the search results and concordance list.
+- Per-item detail: what it meant, what it did, the sign, and how it is answered — with the verses rendered inline.
+
+### Open questions
+
+- **Where it hangs.** A sixth top-level nav item, or a tab inside Insights. The nav is already at five and has a mobile off-canvas to keep in step; Insights is the closest existing home, but these maps are reading material rather than statistics about the user's own tagging, which is what Insights currently means.
+- Whether covenant prose is pre-wrapped in the data file or wrapped at render time — SVG text does not wrap on its own.
+
+**Dependencies:** none. Fully unblocked; the reference parser and graph pattern it needs are both already shipped.
+
+**Note:** the writing is the cost here, not the code. The graphs are a few hundred lines against patterns that already exist; the forty-odd pairings and seven covenant descriptions are genuine editorial work, and the covenant "what it meant / what it did" fields are interpretive rather than factual.
+
 ## Effort summary
 
 | Feature | Effort | Blocked on |
@@ -177,6 +219,7 @@ User feedback after using the Topics feature: auto-tags showing the same colored
 | 3B1. Topic smart folders (Nave's) | **Done** | Shipped 2026-07-29 |
 | 3B2. Named-entity smart tags (people) | **Done** | Shipped 2026-07-29 |
 | 3C. AI semantic tagging | **XL** | Infra/provider decision, not data |
+| 4. Prophecy & Covenant Maps | **M** | Nothing — unblocked, not started |
 
 ## Suggested sequencing
 
@@ -187,3 +230,4 @@ User feedback after using the Topics feature: auto-tags showing the same colored
 5. **Feature 2, Phases 2-3** — word-tap interaction + bottom sheet UI, once Phase 1 data exists.
 6. **Feature 3B1** — independent data source, can run in parallel with any of the above.
 7. **Features 3B2 / 3C** — revisit after the above; each needs its own scoping spike before a real effort estimate is possible.
+8. **Feature 4** — independent of everything above and unblocked, so it can be picked up whenever. Sequence it by appetite for the writing rather than by technical readiness: the dataset is the long pole, and it can be authored a theme at a time with the map rendering whatever exists so far.
