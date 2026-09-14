@@ -3,7 +3,7 @@
 // draftr/haven/Movies), since this is a server-to-server poll, not an interactive login.
 
 const { connectLambda } = require("@netlify/blobs");
-const { listSignups } = require("./_users");
+const { listSignups, listDeletions } = require("./_users");
 
 function dayKey(iso) {
   return iso.slice(0, 10);
@@ -34,15 +34,15 @@ exports.handler = async (event) => {
   }
 
   try {
-    const signups = await listSignups();
+    const [signups, deletions] = await Promise.all([listSignups(), listDeletions()]);
 
     return {
       statusCode: 200,
       headers: { "Content-Type": "application/json; charset=utf-8" },
       body: JSON.stringify({
         signups: countsByDay(signups.map((s) => s.createdAt)),
-        // No account-deletion flow exists in this app yet — always empty until one is built.
-        deletions: [],
+        deletions: countsByDay(deletions.map((d) => d.deletedAt)),
+        // Signup records are removed on deletion, so this is already the live count.
         activeUsers: signups.length,
       }),
     };
