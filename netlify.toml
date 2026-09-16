@@ -5,6 +5,12 @@
 [functions]
   directory = "netlify/functions"
 
+# Pulls the user operations App Manager has queued for this app. Scheduled rather than exposed
+# as an endpoint: nothing needs a deletion to land within seconds, and a schedule means the
+# dashboard holds no way to make this app act on demand.
+[functions."collect-app-manager-tasks"]
+  schedule = "*/5 * * * *"
+
 [[redirects]]
   from = "/api/tags"
   to = "/.netlify/functions/tags"
